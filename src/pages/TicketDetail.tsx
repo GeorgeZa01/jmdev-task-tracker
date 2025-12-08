@@ -31,7 +31,7 @@ export default function TicketDetail() {
   const [newComment, setNewComment] = useState('');
   const [comments, setComments] = useState(ticket?.comments || []);
   const [status, setStatus] = useState(ticket?.status || 'open');
-  const [assigneeId, setAssigneeId] = useState(ticket?.assignee?.id || '');
+  const [assigneeId, setAssigneeId] = useState(ticket?.assignee?.id || 'unassigned');
 
   if (!ticket) {
     return (
@@ -245,7 +245,7 @@ export default function TicketDetail() {
                   <SelectValue placeholder="Unassigned" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">Unassigned</SelectItem>
+                  <SelectItem value="unassigned">Unassigned</SelectItem>
                   {mockUsers
                     .filter((u) => u.role !== 'user')
                     .map((user) => (
