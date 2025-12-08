@@ -9,7 +9,9 @@ import { CommentItem } from '@/components/tickets/CommentItem';
 import { ActivityTimeline } from '@/components/tickets/ActivityTimeline';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Select,
   SelectContent,
@@ -19,8 +21,11 @@ import {
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
-import { ArrowLeft, MessageSquare, History, CheckCircle, RotateCcw } from 'lucide-react';
+import { ArrowLeft, MessageSquare, History, CheckCircle, RotateCcw, Pencil, X, Check } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import { TicketPriority, TicketLabel } from '@/types/ticket';
+
+const ALL_LABELS: TicketLabel[] = ['bug', 'feature', 'enhancement', 'documentation', 'question'];
 
 export default function TicketDetail() {
   const { id } = useParams<{ id: string }>();
@@ -32,6 +37,14 @@ export default function TicketDetail() {
   const [comments, setComments] = useState(ticket?.comments || []);
   const [status, setStatus] = useState(ticket?.status || 'open');
   const [assigneeId, setAssigneeId] = useState(ticket?.assignee?.id || 'unassigned');
+  
+  // Edit states
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [isEditingDescription, setIsEditingDescription] = useState(false);
+  const [editTitle, setEditTitle] = useState(ticket?.title || '');
+  const [editDescription, setEditDescription] = useState(ticket?.description || '');
+  const [priority, setPriority] = useState<TicketPriority>(ticket?.priority || 'medium');
+  const [labels, setLabels] = useState<TicketLabel[]>(ticket?.labels || []);
 
   if (!ticket) {
     return (
@@ -91,6 +104,49 @@ export default function TicketDetail() {
     });
   };
 
+  const handleSaveTitle = () => {
+    if (!editTitle.trim()) return;
+    setIsEditingTitle(false);
+    toast({
+      title: 'Title updated',
+      description: 'The ticket title has been updated.',
+    });
+  };
+
+  const handleCancelTitle = () => {
+    setEditTitle(ticket.title);
+    setIsEditingTitle(false);
+  };
+
+  const handleSaveDescription = () => {
+    setIsEditingDescription(false);
+    toast({
+      title: 'Description updated',
+      description: 'The ticket description has been updated.',
+    });
+  };
+
+  const handleCancelDescription = () => {
+    setEditDescription(ticket.description);
+    setIsEditingDescription(false);
+  };
+
+  const handlePriorityChange = (newPriority: TicketPriority) => {
+    setPriority(newPriority);
+    toast({
+      title: 'Priority updated',
+      description: `Priority changed to ${newPriority}.`,
+    });
+  };
+
+  const handleLabelToggle = (label: TicketLabel) => {
+    setLabels(prev => 
+      prev.includes(label) 
+        ? prev.filter(l => l !== label)
+        : [...prev, label]
+    );
+  };
+
   return (
     <div className="min-h-screen bg-background">
       <Header />
@@ -115,7 +171,34 @@ export default function TicketDetail() {
                 </span>
               </div>
               
-              <h1 className="text-2xl font-bold mb-4">{ticket.title}</h1>
+              {isEditingTitle ? (
+                <div className="flex items-center gap-2 mb-4">
+                  <Input
+                    value={editTitle}
+                    onChange={(e) => setEditTitle(e.target.value)}
+                    className="text-xl font-bold"
+                    autoFocus
+                  />
+                  <Button size="icon" variant="ghost" onClick={handleSaveTitle}>
+                    <Check className="h-4 w-4" />
+                  </Button>
+                  <Button size="icon" variant="ghost" onClick={handleCancelTitle}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2 mb-4 group">
+                  <h1 className="text-2xl font-bold">{editTitle}</h1>
+                  <Button 
+                    size="icon" 
+                    variant="ghost" 
+                    className="opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={() => setIsEditingTitle(true)}
+                  >
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                </div>
+              )}
               
               <div className="flex items-center gap-3 text-sm text-muted-foreground">
                 <Avatar className="h-6 w-6">
@@ -133,25 +216,56 @@ export default function TicketDetail() {
 
             {/* Ticket Description */}
             <div className="border-2 border-border bg-card">
-              <div className="flex items-center gap-2 px-4 py-3 bg-muted/50 border-b border-border">
-                <Avatar className="h-6 w-6">
-                  <AvatarImage src={ticket.author.avatar} alt={ticket.author.name} />
-                  <AvatarFallback className="text-[10px]">
-                    {getInitials(ticket.author.name)}
-                  </AvatarFallback>
-                </Avatar>
-                <span className="font-semibold text-sm">{ticket.author.name}</span>
-                <span className="text-sm text-muted-foreground">
-                  commented {formatDistanceToNow(ticket.createdAt, { addSuffix: true })}
-                </span>
+              <div className="flex items-center justify-between px-4 py-3 bg-muted/50 border-b border-border">
+                <div className="flex items-center gap-2">
+                  <Avatar className="h-6 w-6">
+                    <AvatarImage src={ticket.author.avatar} alt={ticket.author.name} />
+                    <AvatarFallback className="text-[10px]">
+                      {getInitials(ticket.author.name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="font-semibold text-sm">{ticket.author.name}</span>
+                  <span className="text-sm text-muted-foreground">
+                    commented {formatDistanceToNow(ticket.createdAt, { addSuffix: true })}
+                  </span>
+                </div>
+                {!isEditingDescription && (
+                  <Button 
+                    size="sm" 
+                    variant="ghost"
+                    onClick={() => setIsEditingDescription(true)}
+                  >
+                    <Pencil className="h-4 w-4 mr-1" />
+                    Edit
+                  </Button>
+                )}
               </div>
               
               <div className="p-4">
-                <div className="prose prose-sm max-w-none">
-                  <pre className="whitespace-pre-wrap font-sans text-sm">
-                    {ticket.description}
-                  </pre>
-                </div>
+                {isEditingDescription ? (
+                  <div className="space-y-3">
+                    <Textarea
+                      value={editDescription}
+                      onChange={(e) => setEditDescription(e.target.value)}
+                      rows={8}
+                      className="font-sans text-sm"
+                    />
+                    <div className="flex justify-end gap-2">
+                      <Button variant="outline" size="sm" onClick={handleCancelDescription}>
+                        Cancel
+                      </Button>
+                      <Button size="sm" onClick={handleSaveDescription}>
+                        Save
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="prose prose-sm max-w-none">
+                    <pre className="whitespace-pre-wrap font-sans text-sm">
+                      {editDescription}
+                    </pre>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -268,21 +382,46 @@ export default function TicketDetail() {
             {/* Priority */}
             <div className="border-2 border-border bg-card p-4">
               <h3 className="font-semibold mb-3">Priority</h3>
-              <PriorityBadge priority={ticket.priority} />
+              <Select value={priority} onValueChange={(v) => handlePriorityChange(v as TicketPriority)}>
+                <SelectTrigger>
+                  <SelectValue>
+                    <PriorityBadge priority={priority} />
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="low">
+                    <PriorityBadge priority="low" />
+                  </SelectItem>
+                  <SelectItem value="medium">
+                    <PriorityBadge priority="medium" />
+                  </SelectItem>
+                  <SelectItem value="high">
+                    <PriorityBadge priority="high" />
+                  </SelectItem>
+                  <SelectItem value="critical">
+                    <PriorityBadge priority="critical" />
+                  </SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             {/* Labels */}
             <div className="border-2 border-border bg-card p-4">
               <h3 className="font-semibold mb-3">Labels</h3>
-              {ticket.labels.length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {ticket.labels.map((label) => (
-                    <LabelBadge key={label} label={label} />
-                  ))}
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">No labels</p>
-              )}
+              <div className="space-y-2">
+                {ALL_LABELS.map((label) => (
+                  <div key={label} className="flex items-center gap-2">
+                    <Checkbox
+                      id={`label-${label}`}
+                      checked={labels.includes(label)}
+                      onCheckedChange={() => handleLabelToggle(label)}
+                    />
+                    <label htmlFor={`label-${label}`} className="cursor-pointer">
+                      <LabelBadge label={label} />
+                    </label>
+                  </div>
+                ))}
+              </div>
             </div>
 
             {/* Participants */}
