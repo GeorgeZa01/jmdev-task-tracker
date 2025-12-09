@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { mockTickets, mockUsers, currentUser } from '@/data/mockData';
+import { useTicket, useUpdateTicket, useAddComment } from '@/hooks/useTickets';
 import { Header } from '@/components/layout/Header';
 import { StatusBadge } from '@/components/tickets/StatusBadge';
 import { PriorityBadge } from '@/components/tickets/PriorityBadge';
@@ -10,7 +10,7 @@ import { ActivityTimeline } from '@/components/tickets/ActivityTimeline';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Select,
@@ -21,30 +21,38 @@ import {
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
-import { ArrowLeft, MessageSquare, History, CheckCircle, RotateCcw, Pencil, X, Check } from 'lucide-react';
+import { ArrowLeft, MessageSquare, History, CheckCircle, RotateCcw, Pencil, X, Check, Loader2 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { TicketPriority, TicketLabel } from '@/types/ticket';
 
 const ALL_LABELS: TicketLabel[] = ['bug', 'feature', 'enhancement', 'documentation', 'question'];
+const CURRENT_USER_NAME = 'Current User'; // TODO: Replace with actual auth
 
 export default function TicketDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
   
-  const ticket = mockTickets.find((t) => t.id === id);
-  const [newComment, setNewComment] = useState('');
-  const [comments, setComments] = useState(ticket?.comments || []);
-  const [status, setStatus] = useState(ticket?.status || 'open');
-  const [assigneeId, setAssigneeId] = useState(ticket?.assignee?.id || 'unassigned');
+  const { data: ticket, isLoading } = useTicket(id || '');
+  const updateTicket = useUpdateTicket();
+  const addComment = useAddComment();
   
-  // Edit states
+  const [newComment, setNewComment] = useState('');
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isEditingDescription, setIsEditingDescription] = useState(false);
-  const [editTitle, setEditTitle] = useState(ticket?.title || '');
-  const [editDescription, setEditDescription] = useState(ticket?.description || '');
-  const [priority, setPriority] = useState<TicketPriority>(ticket?.priority || 'medium');
-  const [labels, setLabels] = useState<TicketLabel[]>(ticket?.labels || []);
+  const [editTitle, setEditTitle] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Header />
+        <main className="container py-6 flex items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </main>
+      </div>
+    );
+  }
 
   if (!ticket) {
     return (
@@ -73,44 +81,75 @@ export default function TicketDetail() {
       .toUpperCase();
   };
 
-  const handleAddComment = () => {
+  const handleAddComment = async () => {
     if (!newComment.trim()) return;
 
-    const comment = {
-      id: crypto.randomUUID(),
-      ticketId: ticket.id,
-      author: currentUser,
-      content: newComment.trim(),
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-
-    setComments((prev) => [...prev, comment]);
-    setNewComment('');
-
-    toast({
-      title: 'Comment added',
-      description: 'Your comment has been posted.',
-    });
+    try {
+      await addComment.mutateAsync({
+        ticketId: ticket.id,
+        content: newComment.trim(),
+        authorName: CURRENT_USER_NAME,
+      });
+      setNewComment('');
+      toast({
+        title: 'Comment added',
+        description: 'Your comment has been posted.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to add comment.',
+        variant: 'destructive',
+      });
+    }
   };
 
-  const toggleStatus = () => {
-    const newStatus = status === 'open' ? 'closed' : 'open';
-    setStatus(newStatus);
-
-    toast({
-      title: `Ticket ${newStatus}`,
-      description: `Ticket #${ticket.ticketNumber} has been ${newStatus === 'open' ? 'reopened' : 'closed'}.`,
-    });
+  const toggleStatus = async () => {
+    const newStatus = ticket.status === 'open' ? 'closed' : 'open';
+    
+    try {
+      await updateTicket.mutateAsync({
+        id: ticket.id,
+        updates: { 
+          status: newStatus,
+          status_changed_at: new Date().toISOString(),
+        },
+        actorName: CURRENT_USER_NAME,
+      });
+      toast({
+        title: `Ticket ${newStatus}`,
+        description: `Ticket #${ticket.ticketNumber} has been ${newStatus === 'open' ? 'reopened' : 'closed'}.`,
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to update ticket status.',
+        variant: 'destructive',
+      });
+    }
   };
 
-  const handleSaveTitle = () => {
+  const handleSaveTitle = async () => {
     if (!editTitle.trim()) return;
-    setIsEditingTitle(false);
-    toast({
-      title: 'Title updated',
-      description: 'The ticket title has been updated.',
-    });
+    
+    try {
+      await updateTicket.mutateAsync({
+        id: ticket.id,
+        updates: { title: editTitle.trim() },
+        actorName: CURRENT_USER_NAME,
+      });
+      setIsEditingTitle(false);
+      toast({
+        title: 'Title updated',
+        description: 'The ticket title has been updated.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to update title.',
+        variant: 'destructive',
+      });
+    }
   };
 
   const handleCancelTitle = () => {
@@ -118,12 +157,25 @@ export default function TicketDetail() {
     setIsEditingTitle(false);
   };
 
-  const handleSaveDescription = () => {
-    setIsEditingDescription(false);
-    toast({
-      title: 'Description updated',
-      description: 'The ticket description has been updated.',
-    });
+  const handleSaveDescription = async () => {
+    try {
+      await updateTicket.mutateAsync({
+        id: ticket.id,
+        updates: { description: editDescription },
+        actorName: CURRENT_USER_NAME,
+      });
+      setIsEditingDescription(false);
+      toast({
+        title: 'Description updated',
+        description: 'The ticket description has been updated.',
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to update description.',
+        variant: 'destructive',
+      });
+    }
   };
 
   const handleCancelDescription = () => {
@@ -131,20 +183,54 @@ export default function TicketDetail() {
     setIsEditingDescription(false);
   };
 
-  const handlePriorityChange = (newPriority: TicketPriority) => {
-    setPriority(newPriority);
-    toast({
-      title: 'Priority updated',
-      description: `Priority changed to ${newPriority}.`,
-    });
+  const handlePriorityChange = async (newPriority: TicketPriority) => {
+    try {
+      await updateTicket.mutateAsync({
+        id: ticket.id,
+        updates: { priority: newPriority },
+        actorName: CURRENT_USER_NAME,
+      });
+      toast({
+        title: 'Priority updated',
+        description: `Priority changed to ${newPriority}.`,
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to update priority.',
+        variant: 'destructive',
+      });
+    }
   };
 
-  const handleLabelToggle = (label: TicketLabel) => {
-    setLabels(prev => 
-      prev.includes(label) 
-        ? prev.filter(l => l !== label)
-        : [...prev, label]
-    );
+  const handleLabelToggle = async (label: TicketLabel) => {
+    const newLabels = ticket.labels.includes(label)
+      ? ticket.labels.filter(l => l !== label)
+      : [...ticket.labels, label];
+    
+    try {
+      await updateTicket.mutateAsync({
+        id: ticket.id,
+        updates: { labels: newLabels },
+        actorName: CURRENT_USER_NAME,
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to update labels.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const startEditTitle = () => {
+    setEditTitle(ticket.title);
+    setIsEditingTitle(true);
+  };
+
+  const startEditDescription = () => {
+    setEditDescription(ticket.description);
+    setIsEditingDescription(true);
   };
 
   return (
@@ -165,7 +251,7 @@ export default function TicketDetail() {
             {/* Ticket Header */}
             <div className="border-2 border-border bg-card p-6">
               <div className="flex items-start gap-4 mb-4">
-                <StatusBadge status={status} />
+                <StatusBadge status={ticket.status} />
                 <span className="text-sm text-muted-foreground font-mono">
                   #{ticket.ticketNumber}
                 </span>
@@ -188,12 +274,12 @@ export default function TicketDetail() {
                 </div>
               ) : (
                 <div className="flex items-center gap-2 mb-4 group">
-                  <h1 className="text-2xl font-bold">{editTitle}</h1>
+                  <h1 className="text-2xl font-bold">{ticket.title}</h1>
                   <Button 
                     size="icon" 
                     variant="ghost" 
                     className="opacity-0 group-hover:opacity-100 transition-opacity"
-                    onClick={() => setIsEditingTitle(true)}
+                    onClick={startEditTitle}
                   >
                     <Pencil className="h-4 w-4" />
                   </Button>
@@ -202,7 +288,6 @@ export default function TicketDetail() {
               
               <div className="flex items-center gap-3 text-sm text-muted-foreground">
                 <Avatar className="h-6 w-6">
-                  <AvatarImage src={ticket.author.avatar} alt={ticket.author.name} />
                   <AvatarFallback className="text-[10px]">
                     {getInitials(ticket.author.name)}
                   </AvatarFallback>
@@ -219,7 +304,6 @@ export default function TicketDetail() {
               <div className="flex items-center justify-between px-4 py-3 bg-muted/50 border-b border-border">
                 <div className="flex items-center gap-2">
                   <Avatar className="h-6 w-6">
-                    <AvatarImage src={ticket.author.avatar} alt={ticket.author.name} />
                     <AvatarFallback className="text-[10px]">
                       {getInitials(ticket.author.name)}
                     </AvatarFallback>
@@ -233,7 +317,7 @@ export default function TicketDetail() {
                   <Button 
                     size="sm" 
                     variant="ghost"
-                    onClick={() => setIsEditingDescription(true)}
+                    onClick={startEditDescription}
                   >
                     <Pencil className="h-4 w-4 mr-1" />
                     Edit
@@ -262,7 +346,7 @@ export default function TicketDetail() {
                 ) : (
                   <div className="prose prose-sm max-w-none">
                     <pre className="whitespace-pre-wrap font-sans text-sm">
-                      {editDescription}
+                      {ticket.description || 'No description provided.'}
                     </pre>
                   </div>
                 )}
@@ -277,7 +361,7 @@ export default function TicketDetail() {
                   className="data-[state=active]:bg-card data-[state=active]:border-b-2 data-[state=active]:border-primary rounded-none px-4 py-3"
                 >
                   <MessageSquare className="h-4 w-4 mr-2" />
-                  Comments ({comments.length})
+                  Comments ({ticket.comments.length})
                 </TabsTrigger>
                 <TabsTrigger
                   value="activity"
@@ -289,8 +373,8 @@ export default function TicketDetail() {
               </TabsList>
               
               <TabsContent value="comments" className="p-4 space-y-4">
-                {comments.length > 0 ? (
-                  comments.map((comment) => (
+                {ticket.comments.length > 0 ? (
+                  ticket.comments.map((comment) => (
                     <CommentItem key={comment.id} comment={comment} />
                   ))
                 ) : (
@@ -303,9 +387,8 @@ export default function TicketDetail() {
                 <div className="pt-4 border-t border-border">
                   <div className="flex gap-3">
                     <Avatar className="h-8 w-8 flex-shrink-0">
-                      <AvatarImage src={currentUser.avatar} alt={currentUser.name} />
                       <AvatarFallback className="text-xs">
-                        {getInitials(currentUser.name)}
+                        {getInitials(CURRENT_USER_NAME)}
                       </AvatarFallback>
                     </Avatar>
                     
@@ -321,8 +404,9 @@ export default function TicketDetail() {
                         <Button
                           variant="outline"
                           onClick={toggleStatus}
+                          disabled={updateTicket.isPending}
                         >
-                          {status === 'open' ? (
+                          {ticket.status === 'open' ? (
                             <>
                               <CheckCircle className="h-4 w-4 mr-2" />
                               Close ticket
@@ -334,7 +418,11 @@ export default function TicketDetail() {
                             </>
                           )}
                         </Button>
-                        <Button onClick={handleAddComment} disabled={!newComment.trim()}>
+                        <Button 
+                          onClick={handleAddComment} 
+                          disabled={!newComment.trim() || addComment.isPending}
+                        >
+                          {addComment.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                           Comment
                         </Button>
                       </div>
@@ -351,41 +439,13 @@ export default function TicketDetail() {
 
           {/* Sidebar */}
           <div className="space-y-4">
-            {/* Assignee */}
-            <div className="border-2 border-border bg-card p-4">
-              <h3 className="font-semibold mb-3">Assignee</h3>
-              <Select value={assigneeId} onValueChange={setAssigneeId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Unassigned" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="unassigned">Unassigned</SelectItem>
-                  {mockUsers
-                    .filter((u) => u.role !== 'user')
-                    .map((user) => (
-                      <SelectItem key={user.id} value={user.id}>
-                        <div className="flex items-center gap-2">
-                          <Avatar className="h-5 w-5">
-                            <AvatarImage src={user.avatar} alt={user.name} />
-                            <AvatarFallback className="text-[10px]">
-                              {getInitials(user.name)}
-                            </AvatarFallback>
-                          </Avatar>
-                          {user.name}
-                        </div>
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-            </div>
-
             {/* Priority */}
             <div className="border-2 border-border bg-card p-4">
               <h3 className="font-semibold mb-3">Priority</h3>
-              <Select value={priority} onValueChange={(v) => handlePriorityChange(v as TicketPriority)}>
+              <Select value={ticket.priority} onValueChange={(v) => handlePriorityChange(v as TicketPriority)}>
                 <SelectTrigger>
                   <SelectValue>
-                    <PriorityBadge priority={priority} />
+                    <PriorityBadge priority={ticket.priority} />
                   </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
@@ -413,7 +473,7 @@ export default function TicketDetail() {
                   <div key={label} className="flex items-center gap-2">
                     <Checkbox
                       id={`label-${label}`}
-                      checked={labels.includes(label)}
+                      checked={ticket.labels.includes(label)}
                       onCheckedChange={() => handleLabelToggle(label)}
                     />
                     <label htmlFor={`label-${label}`} className="cursor-pointer">
@@ -426,18 +486,14 @@ export default function TicketDetail() {
 
             {/* Participants */}
             <div className="border-2 border-border bg-card p-4">
-              <h3 className="font-semibold mb-3">Participants</h3>
-              <div className="flex flex-wrap gap-2">
-                {[ticket.author, ...(ticket.assignee ? [ticket.assignee] : [])]
-                  .filter((v, i, a) => a.findIndex((t) => t.id === v.id) === i)
-                  .map((user) => (
-                    <Avatar key={user.id} className="h-8 w-8">
-                      <AvatarImage src={user.avatar} alt={user.name} />
-                      <AvatarFallback className="text-xs">
-                        {getInitials(user.name)}
-                      </AvatarFallback>
-                    </Avatar>
-                  ))}
+              <h3 className="font-semibold mb-3">Author</h3>
+              <div className="flex items-center gap-2">
+                <Avatar className="h-8 w-8">
+                  <AvatarFallback className="text-xs">
+                    {getInitials(ticket.author.name)}
+                  </AvatarFallback>
+                </Avatar>
+                <span className="text-sm">{ticket.author.name}</span>
               </div>
             </div>
           </div>
