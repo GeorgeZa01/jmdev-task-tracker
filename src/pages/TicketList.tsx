@@ -1,15 +1,17 @@
 import { useState, useMemo } from 'react';
-import { mockTickets } from '@/data/mockData';
-import { Ticket, TicketStatus, TicketPriority, TicketLabel } from '@/types/ticket';
+import { useTickets, useCreateTicket } from '@/hooks/useTickets';
+import { TicketStatus, TicketPriority, TicketLabel } from '@/types/ticket';
 import { Header } from '@/components/layout/Header';
 import { TicketFilters } from '@/components/tickets/TicketFilters';
 import { TicketListItem } from '@/components/tickets/TicketListItem';
 import { CreateTicketDialog } from '@/components/tickets/CreateTicketDialog';
 import { Button } from '@/components/ui/button';
-import { Plus, Ticket as TicketIcon } from 'lucide-react';
+import { Plus, Ticket as TicketIcon, Loader2 } from 'lucide-react';
 
 export default function TicketList() {
-  const [tickets, setTickets] = useState<Ticket[]>(mockTickets);
+  const { data: tickets = [], isLoading } = useTickets();
+  const createTicket = useCreateTicket();
+  
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<TicketStatus | 'all'>('all');
   const [priorityFilter, setPriorityFilter] = useState<TicketPriority | 'all'>('all');
@@ -18,20 +20,14 @@ export default function TicketList() {
 
   const filteredTickets = useMemo(() => {
     return tickets.filter((ticket) => {
-      // Search filter
       const matchesSearch =
         !searchQuery ||
         ticket.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         ticket.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
         `#${ticket.ticketNumber}`.includes(searchQuery);
 
-      // Status filter
       const matchesStatus = statusFilter === 'all' || ticket.status === statusFilter;
-
-      // Priority filter
       const matchesPriority = priorityFilter === 'all' || ticket.priority === priorityFilter;
-
-      // Label filter
       const matchesLabel = labelFilter === 'all' || ticket.labels.includes(labelFilter);
 
       return matchesSearch && matchesStatus && matchesPriority && matchesLabel;
@@ -45,14 +41,34 @@ export default function TicketList() {
     setLabelFilter('all');
   };
 
-  const handleCreateTicket = (newTicket: Ticket) => {
-    setTickets((prev) => [newTicket, ...prev]);
+  const handleCreateTicket = async (data: {
+    title: string;
+    description: string;
+    priority: TicketPriority;
+    labels: TicketLabel[];
+    assigneeId?: string;
+    assigneeName?: string;
+  }) => {
+    await createTicket.mutateAsync({
+      ...data,
+      authorName: 'Current User', // TODO: Replace with actual user
+    });
   };
 
   const nextTicketNumber = Math.max(...tickets.map((t) => t.ticketNumber), 0) + 1;
-
   const openCount = tickets.filter((t) => t.status === 'open').length;
   const closedCount = tickets.filter((t) => t.status === 'closed').length;
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Header />
+        <main className="container py-6 flex items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -116,6 +132,7 @@ export default function TicketList() {
           onOpenChange={setIsCreateDialogOpen}
           onCreateTicket={handleCreateTicket}
           nextTicketNumber={nextTicketNumber}
+          isLoading={createTicket.isPending}
         />
       </main>
     </div>

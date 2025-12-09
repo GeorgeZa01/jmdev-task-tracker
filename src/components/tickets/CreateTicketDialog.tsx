@@ -1,6 +1,5 @@
 import { useState } from 'react';
-import { TicketPriority, TicketLabel, Ticket } from '@/types/ticket';
-import { mockUsers, currentUser } from '@/data/mockData';
+import { TicketPriority, TicketLabel } from '@/types/ticket';
 import {
   Dialog,
   DialogContent,
@@ -20,12 +19,21 @@ import {
 } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
+import { Loader2 } from 'lucide-react';
 
 interface CreateTicketDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onCreateTicket: (ticket: Ticket) => void;
+  onCreateTicket: (data: {
+    title: string;
+    description: string;
+    priority: TicketPriority;
+    labels: TicketLabel[];
+    assigneeId?: string;
+    assigneeName?: string;
+  }) => Promise<void>;
   nextTicketNumber: number;
+  isLoading?: boolean;
 }
 
 const labelOptions: { value: TicketLabel; label: string }[] = [
@@ -41,15 +49,15 @@ export function CreateTicketDialog({
   onOpenChange,
   onCreateTicket,
   nextTicketNumber,
+  isLoading,
 }: CreateTicketDialogProps) {
   const { toast } = useToast();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<TicketPriority>('medium');
   const [selectedLabels, setSelectedLabels] = useState<TicketLabel[]>([]);
-  const [assigneeId, setAssigneeId] = useState<string>('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!title.trim()) {
@@ -61,38 +69,28 @@ export function CreateTicketDialog({
       return;
     }
 
-    const newTicket: Ticket = {
-      id: crypto.randomUUID(),
-      ticketNumber: nextTicketNumber,
-      title: title.trim(),
-      description: description.trim(),
-      author: currentUser,
-      assignee: assigneeId ? mockUsers.find((u) => u.id === assigneeId) : undefined,
-      status: 'open',
-      priority,
-      labels: selectedLabels,
-      comments: [],
-      activityLog: [
-        {
-          id: crypto.randomUUID(),
-          ticketId: '',
-          user: currentUser,
-          action: 'created',
-          createdAt: new Date(),
-        },
-      ],
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
+    try {
+      await onCreateTicket({
+        title: title.trim(),
+        description: description.trim(),
+        priority,
+        labels: selectedLabels,
+      });
 
-    onCreateTicket(newTicket);
-    resetForm();
-    onOpenChange(false);
+      resetForm();
+      onOpenChange(false);
 
-    toast({
-      title: 'Ticket created',
-      description: `Ticket #${nextTicketNumber} has been created successfully.`,
-    });
+      toast({
+        title: 'Ticket created',
+        description: `Ticket #${nextTicketNumber} has been created successfully.`,
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to create ticket. Please try again.',
+        variant: 'destructive',
+      });
+    }
   };
 
   const resetForm = () => {
@@ -100,7 +98,6 @@ export function CreateTicketDialog({
     setDescription('');
     setPriority('medium');
     setSelectedLabels([]);
-    setAssigneeId('');
   };
 
   const toggleLabel = (label: TicketLabel) => {
@@ -138,40 +135,19 @@ export function CreateTicketDialog({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="priority">Priority</Label>
-              <Select value={priority} onValueChange={(v) => setPriority(v as TicketPriority)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select priority" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="critical">Critical</SelectItem>
-                  <SelectItem value="high">High</SelectItem>
-                  <SelectItem value="medium">Medium</SelectItem>
-                  <SelectItem value="low">Low</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="assignee">Assignee</Label>
-              <Select value={assigneeId} onValueChange={setAssigneeId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Assign to..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">Unassigned</SelectItem>
-                  {mockUsers
-                    .filter((u) => u.role !== 'user')
-                    .map((user) => (
-                      <SelectItem key={user.id} value={user.id}>
-                        {user.name}
-                      </SelectItem>
-                    ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="space-y-2">
+            <Label htmlFor="priority">Priority</Label>
+            <Select value={priority} onValueChange={(v) => setPriority(v as TicketPriority)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select priority" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="critical">Critical</SelectItem>
+                <SelectItem value="high">High</SelectItem>
+                <SelectItem value="medium">Medium</SelectItem>
+                <SelectItem value="low">Low</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="space-y-2">
@@ -196,7 +172,10 @@ export function CreateTicketDialog({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit">Create Ticket</Button>
+            <Button type="submit" disabled={isLoading}>
+              {isLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Create Ticket
+            </Button>
           </div>
         </form>
       </DialogContent>
