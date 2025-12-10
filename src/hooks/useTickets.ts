@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Ticket, TicketStatus, TicketPriority, TicketLabel } from '@/types/ticket';
 import { Tables, TablesInsert } from '@/integrations/supabase/types';
@@ -66,6 +67,31 @@ const transformTicket = (
 };
 
 export function useTickets() {
+  const queryClient = useQueryClient();
+
+  // Set up real-time subscription
+  useEffect(() => {
+    const channel = supabase
+      .channel('tickets-realtime')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'tickets',
+        },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ['tickets'] });
+          queryClient.invalidateQueries({ queryKey: ['ticket-stats'] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [queryClient]);
+
   return useQuery({
     queryKey: ['tickets'],
     queryFn: async () => {
@@ -81,6 +107,45 @@ export function useTickets() {
 }
 
 export function useTicket(id: string) {
+  const queryClient = useQueryClient();
+
+  // Set up real-time subscription for single ticket
+  useEffect(() => {
+    if (!id) return;
+
+    const channel = supabase
+      .channel(`ticket-${id}-realtime`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'tickets',
+          filter: `id=eq.${id}`,
+        },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ['ticket', id] });
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'comments',
+          filter: `ticket_id=eq.${id}`,
+        },
+        () => {
+          queryClient.invalidateQueries({ queryKey: ['ticket', id] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [id, queryClient]);
+
   return useQuery({
     queryKey: ['ticket', id],
     queryFn: async () => {
@@ -113,6 +178,7 @@ export function useCreateTicket() {
       labels: TicketLabel[];
       authorName: string;
       authorEmail?: string;
+      authorId?: string;
       assigneeId?: string;
       assigneeName?: string;
     }) => {
@@ -125,6 +191,7 @@ export function useCreateTicket() {
           labels: data.labels,
           author_name: data.authorName,
           author_email: data.authorEmail,
+          author_id: data.authorId,
           assignee_id: data.assigneeId,
           assignee_name: data.assigneeName,
         })

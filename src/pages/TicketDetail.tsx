@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
 import { useTicket, useUpdateTicket, useAddComment } from '@/hooks/useTickets';
 import { Header } from '@/components/layout/Header';
 import { StatusBadge } from '@/components/tickets/StatusBadge';
@@ -7,6 +8,7 @@ import { PriorityBadge } from '@/components/tickets/PriorityBadge';
 import { LabelBadge } from '@/components/tickets/LabelBadge';
 import { CommentItem } from '@/components/tickets/CommentItem';
 import { ActivityTimeline } from '@/components/tickets/ActivityTimeline';
+import { FileAttachments } from '@/components/tickets/FileAttachments';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -26,12 +28,12 @@ import { formatDistanceToNow } from 'date-fns';
 import { TicketPriority, TicketLabel } from '@/types/ticket';
 
 const ALL_LABELS: TicketLabel[] = ['bug', 'feature', 'enhancement', 'documentation', 'question'];
-const CURRENT_USER_NAME = 'Current User'; // TODO: Replace with actual auth
 
 export default function TicketDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { user } = useAuth();
   
   const { data: ticket, isLoading } = useTicket(id || '');
   const updateTicket = useUpdateTicket();
@@ -42,6 +44,8 @@ export default function TicketDetail() {
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [editDescription, setEditDescription] = useState('');
+
+  const currentUserName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User';
 
   if (isLoading) {
     return (
@@ -88,7 +92,8 @@ export default function TicketDetail() {
       await addComment.mutateAsync({
         ticketId: ticket.id,
         content: newComment.trim(),
-        authorName: CURRENT_USER_NAME,
+        authorName: currentUserName,
+        authorId: user?.id,
       });
       setNewComment('');
       toast({
@@ -114,7 +119,7 @@ export default function TicketDetail() {
           status: newStatus,
           status_changed_at: new Date().toISOString(),
         },
-        actorName: CURRENT_USER_NAME,
+        actorName: currentUserName,
       });
       toast({
         title: `Ticket ${newStatus}`,
@@ -136,7 +141,7 @@ export default function TicketDetail() {
       await updateTicket.mutateAsync({
         id: ticket.id,
         updates: { title: editTitle.trim() },
-        actorName: CURRENT_USER_NAME,
+        actorName: currentUserName,
       });
       setIsEditingTitle(false);
       toast({
@@ -162,7 +167,7 @@ export default function TicketDetail() {
       await updateTicket.mutateAsync({
         id: ticket.id,
         updates: { description: editDescription },
-        actorName: CURRENT_USER_NAME,
+        actorName: currentUserName,
       });
       setIsEditingDescription(false);
       toast({
@@ -188,7 +193,7 @@ export default function TicketDetail() {
       await updateTicket.mutateAsync({
         id: ticket.id,
         updates: { priority: newPriority },
-        actorName: CURRENT_USER_NAME,
+        actorName: currentUserName,
       });
       toast({
         title: 'Priority updated',
@@ -212,7 +217,7 @@ export default function TicketDetail() {
       await updateTicket.mutateAsync({
         id: ticket.id,
         updates: { labels: newLabels },
-        actorName: CURRENT_USER_NAME,
+        actorName: currentUserName,
       });
     } catch (error) {
       toast({
@@ -388,7 +393,7 @@ export default function TicketDetail() {
                   <div className="flex gap-3">
                     <Avatar className="h-8 w-8 flex-shrink-0">
                       <AvatarFallback className="text-xs">
-                        {getInitials(CURRENT_USER_NAME)}
+                        {getInitials(currentUserName)}
                       </AvatarFallback>
                     </Avatar>
                     
@@ -484,16 +489,44 @@ export default function TicketDetail() {
               </div>
             </div>
 
-            {/* Participants */}
+            {/* File Attachments */}
+            <FileAttachments ticketId={ticket.id} />
+
+            {/* Assignee */}
             <div className="border-2 border-border bg-card p-4">
-              <h3 className="font-semibold mb-3">Author</h3>
-              <div className="flex items-center gap-2">
-                <Avatar className="h-8 w-8">
-                  <AvatarFallback className="text-xs">
-                    {getInitials(ticket.author.name)}
-                  </AvatarFallback>
-                </Avatar>
-                <span className="text-sm">{ticket.author.name}</span>
+              <h3 className="font-semibold mb-3">Assignee</h3>
+              {ticket.assignee ? (
+                <div className="flex items-center gap-2">
+                  <Avatar className="h-6 w-6">
+                    <AvatarFallback className="text-[10px]">
+                      {getInitials(ticket.assignee.name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="text-sm">{ticket.assignee.name}</span>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No one assigned</p>
+              )}
+            </div>
+
+            {/* Timestamps */}
+            <div className="border-2 border-border bg-card p-4">
+              <h3 className="font-semibold mb-3">Details</h3>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Created</span>
+                  <span>{formatDistanceToNow(ticket.createdAt, { addSuffix: true })}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-muted-foreground">Updated</span>
+                  <span>{formatDistanceToNow(ticket.updatedAt, { addSuffix: true })}</span>
+                </div>
+                {ticket.closedAt && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Closed</span>
+                    <span>{formatDistanceToNow(ticket.closedAt, { addSuffix: true })}</span>
+                  </div>
+                )}
               </div>
             </div>
           </div>

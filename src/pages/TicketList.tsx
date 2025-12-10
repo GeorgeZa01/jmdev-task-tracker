@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { useAuth } from '@/contexts/AuthContext';
 import { useTickets, useCreateTicket } from '@/hooks/useTickets';
 import { TicketStatus, TicketPriority, TicketLabel } from '@/types/ticket';
 import { Header } from '@/components/layout/Header';
@@ -9,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Plus, Ticket as TicketIcon, Loader2 } from 'lucide-react';
 
 export default function TicketList() {
+  const { user } = useAuth();
   const { data: tickets = [], isLoading } = useTickets();
   const createTicket = useCreateTicket();
   
@@ -49,9 +51,13 @@ export default function TicketList() {
     assigneeId?: string;
     assigneeName?: string;
   }) => {
+    const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Unknown';
+    
     await createTicket.mutateAsync({
       ...data,
-      authorName: 'Current User', // TODO: Replace with actual user
+      authorName: userName,
+      authorEmail: user?.email,
+      authorId: user?.id,
     });
   };
 
