@@ -1,4 +1,5 @@
 import { useTicketStats } from '@/hooks/useTickets';
+import { useUserRole } from '@/hooks/useUserRole';
 import { Header } from '@/components/layout/Header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { StatusBadge } from '@/components/tickets/StatusBadge';
@@ -10,13 +11,20 @@ import {
   AlertTriangle,
   TrendingUp,
   Loader2,
+  Shield,
 } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, Navigate } from 'react-router-dom';
 
 export default function Dashboard() {
   const { data: stats, isLoading } = useTicketStats();
+  const { data: role, isLoading: roleLoading } = useUserRole();
 
-  if (isLoading) {
+  // Only admins and agents can access the dashboard
+  if (!roleLoading && role === 'user') {
+    return <Navigate to="/" replace />;
+  }
+
+  if (isLoading || roleLoading) {
     return (
       <div className="min-h-screen bg-background">
         <Header />
@@ -36,8 +44,13 @@ export default function Dashboard() {
 
       <main className="container py-6">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold">Dashboard</h1>
-          <p className="text-muted-foreground">Overview of ticket activity</p>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <Shield className="h-6 w-6" />
+            Dashboard
+          </h1>
+          <p className="text-muted-foreground">
+            {role === 'admin' ? 'Admin' : 'Agent'} overview of ticket activity
+          </p>
         </div>
 
         {/* Stats Grid */}

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { useUserRole, useCanManageTicket } from '@/hooks/useUserRole';
 import { useTicket, useUpdateTicket, useAddComment } from '@/hooks/useTickets';
 import { Header } from '@/components/layout/Header';
 import { StatusBadge } from '@/components/tickets/StatusBadge';
@@ -23,9 +24,21 @@ import {
 } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
-import { ArrowLeft, MessageSquare, History, CheckCircle, RotateCcw, Pencil, X, Check, Loader2 } from 'lucide-react';
+import { ArrowLeft, MessageSquare, History, CheckCircle, RotateCcw, Pencil, X, Check, Loader2, Trash2 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { TicketPriority, TicketLabel } from '@/types/ticket';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { supabase } from '@/integrations/supabase/client';
 
 const ALL_LABELS: TicketLabel[] = ['bug', 'feature', 'enhancement', 'documentation', 'question'];
 
@@ -34,16 +47,21 @@ export default function TicketDetail() {
   const navigate = useNavigate();
   const { toast } = useToast();
   const { user } = useAuth();
+  const { data: role } = useUserRole();
   
   const { data: ticket, isLoading } = useTicket(id || '');
   const updateTicket = useUpdateTicket();
   const addComment = useAddComment();
+  
+  const canManage = useCanManageTicket(ticket?.author.id);
+  const isAdmin = role === 'admin';
   
   const [newComment, setNewComment] = useState('');
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [editTitle, setEditTitle] = useState('');
   const [editDescription, setEditDescription] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const currentUserName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User';
 
@@ -110,6 +128,8 @@ export default function TicketDetail() {
   };
 
   const toggleStatus = async () => {
+    if (!canManage) return;
+    
     const newStatus = ticket.status === 'open' ? 'closed' : 'open';
     
     try {
@@ -134,8 +154,32 @@ export default function TicketDetail() {
     }
   };
 
+  const handleDeleteTicket = async () => {
+    if (!isAdmin) return;
+    
+    setIsDeleting(true);
+    try {
+      const { error } = await supabase.from('tickets').delete().eq('id', ticket.id);
+      if (error) throw error;
+      
+      toast({
+        title: 'Ticket deleted',
+        description: `Ticket #${ticket.ticketNumber} has been deleted.`,
+      });
+      navigate('/');
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to delete ticket.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
   const handleSaveTitle = async () => {
-    if (!editTitle.trim()) return;
+    if (!editTitle.trim() || !canManage) return;
     
     try {
       await updateTicket.mutateAsync({
@@ -163,6 +207,8 @@ export default function TicketDetail() {
   };
 
   const handleSaveDescription = async () => {
+    if (!canManage) return;
+    
     try {
       await updateTicket.mutateAsync({
         id: ticket.id,
@@ -189,6 +235,8 @@ export default function TicketDetail() {
   };
 
   const handlePriorityChange = async (newPriority: TicketPriority) => {
+    if (!canManage) return;
+    
     try {
       await updateTicket.mutateAsync({
         id: ticket.id,
@@ -209,6 +257,8 @@ export default function TicketDetail() {
   };
 
   const handleLabelToggle = async (label: TicketLabel) => {
+    if (!canManage) return;
+    
     const newLabels = ticket.labels.includes(label)
       ? ticket.labels.filter(l => l !== label)
       : [...ticket.labels, label];
@@ -229,11 +279,13 @@ export default function TicketDetail() {
   };
 
   const startEditTitle = () => {
+    if (!canManage) return;
     setEditTitle(ticket.title);
     setIsEditingTitle(true);
   };
 
   const startEditDescription = () => {
+    if (!canManage) return;
     setEditDescription(ticket.description);
     setIsEditingDescription(true);
   };
@@ -243,11 +295,38 @@ export default function TicketDetail() {
       <Header />
 
       <main className="container py-6">
-        <div className="mb-6">
+        <div className="mb-6 flex items-center justify-between">
           <Button variant="ghost" size="sm" onClick={() => navigate('/')}>
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to tickets
           </Button>
+          
+          {isAdmin && (
+            <AlertDialog>
+              <AlertDialogTrigger asChild>
+                <Button variant="destructive" size="sm">
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete Ticket
+                </Button>
+              </AlertDialogTrigger>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>Delete this ticket?</AlertDialogTitle>
+                  <AlertDialogDescription>
+                    This action cannot be undone. This will permanently delete ticket #{ticket.ticketNumber} 
+                    and all associated comments, attachments, and activity logs.
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                  <AlertDialogAction onClick={handleDeleteTicket} disabled={isDeleting}>
+                    {isDeleting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    Delete
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
+          )}
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -280,14 +359,16 @@ export default function TicketDetail() {
               ) : (
                 <div className="flex items-center gap-2 mb-4 group">
                   <h1 className="text-2xl font-bold">{ticket.title}</h1>
-                  <Button 
-                    size="icon" 
-                    variant="ghost" 
-                    className="opacity-0 group-hover:opacity-100 transition-opacity"
-                    onClick={startEditTitle}
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </Button>
+                  {canManage && (
+                    <Button 
+                      size="icon" 
+                      variant="ghost" 
+                      className="opacity-0 group-hover:opacity-100 transition-opacity"
+                      onClick={startEditTitle}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                  )}
                 </div>
               )}
               
@@ -318,7 +399,7 @@ export default function TicketDetail() {
                     commented {formatDistanceToNow(ticket.createdAt, { addSuffix: true })}
                   </span>
                 </div>
-                {!isEditingDescription && (
+                {!isEditingDescription && canManage && (
                   <Button 
                     size="sm" 
                     variant="ghost"
@@ -406,23 +487,25 @@ export default function TicketDetail() {
                       />
                       
                       <div className="flex justify-end gap-2">
-                        <Button
-                          variant="outline"
-                          onClick={toggleStatus}
-                          disabled={updateTicket.isPending}
-                        >
-                          {ticket.status === 'open' ? (
-                            <>
-                              <CheckCircle className="h-4 w-4 mr-2" />
-                              Close ticket
-                            </>
-                          ) : (
-                            <>
-                              <RotateCcw className="h-4 w-4 mr-2" />
-                              Reopen ticket
-                            </>
-                          )}
-                        </Button>
+                        {canManage && (
+                          <Button
+                            variant="outline"
+                            onClick={toggleStatus}
+                            disabled={updateTicket.isPending}
+                          >
+                            {ticket.status === 'open' ? (
+                              <>
+                                <CheckCircle className="h-4 w-4 mr-2" />
+                                Close ticket
+                              </>
+                            ) : (
+                              <>
+                                <RotateCcw className="h-4 w-4 mr-2" />
+                                Reopen ticket
+                              </>
+                            )}
+                          </Button>
+                        )}
                         <Button 
                           onClick={handleAddComment} 
                           disabled={!newComment.trim() || addComment.isPending}
@@ -447,46 +530,62 @@ export default function TicketDetail() {
             {/* Priority */}
             <div className="border-2 border-border bg-card p-4">
               <h3 className="font-semibold mb-3">Priority</h3>
-              <Select value={ticket.priority} onValueChange={(v) => handlePriorityChange(v as TicketPriority)}>
-                <SelectTrigger>
-                  <SelectValue>
-                    <PriorityBadge priority={ticket.priority} />
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="low">
-                    <PriorityBadge priority="low" />
-                  </SelectItem>
-                  <SelectItem value="medium">
-                    <PriorityBadge priority="medium" />
-                  </SelectItem>
-                  <SelectItem value="high">
-                    <PriorityBadge priority="high" />
-                  </SelectItem>
-                  <SelectItem value="critical">
-                    <PriorityBadge priority="critical" />
-                  </SelectItem>
-                </SelectContent>
-              </Select>
+              {canManage ? (
+                <Select value={ticket.priority} onValueChange={(v) => handlePriorityChange(v as TicketPriority)}>
+                  <SelectTrigger>
+                    <SelectValue>
+                      <PriorityBadge priority={ticket.priority} />
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">
+                      <PriorityBadge priority="low" />
+                    </SelectItem>
+                    <SelectItem value="medium">
+                      <PriorityBadge priority="medium" />
+                    </SelectItem>
+                    <SelectItem value="high">
+                      <PriorityBadge priority="high" />
+                    </SelectItem>
+                    <SelectItem value="critical">
+                      <PriorityBadge priority="critical" />
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              ) : (
+                <PriorityBadge priority={ticket.priority} />
+              )}
             </div>
 
             {/* Labels */}
             <div className="border-2 border-border bg-card p-4">
               <h3 className="font-semibold mb-3">Labels</h3>
-              <div className="space-y-2">
-                {ALL_LABELS.map((label) => (
-                  <div key={label} className="flex items-center gap-2">
-                    <Checkbox
-                      id={`label-${label}`}
-                      checked={ticket.labels.includes(label)}
-                      onCheckedChange={() => handleLabelToggle(label)}
-                    />
-                    <label htmlFor={`label-${label}`} className="cursor-pointer">
-                      <LabelBadge label={label} />
-                    </label>
-                  </div>
-                ))}
-              </div>
+              {canManage ? (
+                <div className="space-y-2">
+                  {ALL_LABELS.map((label) => (
+                    <div key={label} className="flex items-center gap-2">
+                      <Checkbox
+                        id={`label-${label}`}
+                        checked={ticket.labels.includes(label)}
+                        onCheckedChange={() => handleLabelToggle(label)}
+                      />
+                      <label htmlFor={`label-${label}`} className="cursor-pointer">
+                        <LabelBadge label={label} />
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex flex-wrap gap-1">
+                  {ticket.labels.length > 0 ? (
+                    ticket.labels.map((label) => (
+                      <LabelBadge key={label} label={label} />
+                    ))
+                  ) : (
+                    <span className="text-sm text-muted-foreground">No labels</span>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* File Attachments */}
