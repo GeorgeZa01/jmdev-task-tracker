@@ -1,7 +1,9 @@
 import { Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { useUserRole } from '@/hooks/useUserRole';
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Badge } from '@/components/ui/badge';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,10 +12,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { TicketCheck, LayoutDashboard, Settings, LogOut, User } from 'lucide-react';
+import { TicketCheck, LayoutDashboard, Settings, LogOut, User, Shield, UserCog } from 'lucide-react';
+
+const roleConfig = {
+  admin: { label: 'Admin', variant: 'default' as const, icon: Shield },
+  agent: { label: 'Agent', variant: 'secondary' as const, icon: UserCog },
+  user: { label: 'User', variant: 'outline' as const, icon: User },
+};
 
 export function Header() {
   const { user, signOut } = useAuth();
+  const { data: role, isLoading: roleLoading } = useUserRole();
 
   const getInitials = (name: string) => {
     return name
@@ -25,6 +34,8 @@ export function Header() {
 
   const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User';
   const userEmail = user?.email || '';
+  const currentRole = role || 'user';
+  const roleInfo = roleConfig[currentRole];
 
   const handleSignOut = async () => {
     await signOut();
@@ -48,12 +59,14 @@ export function Header() {
                 Tickets
               </Button>
             </Link>
-            <Link to="/dashboard">
-              <Button variant="ghost" size="sm">
-                <LayoutDashboard className="h-4 w-4 mr-2" />
-                Dashboard
-              </Button>
-            </Link>
+            {(currentRole === 'admin' || currentRole === 'agent') && (
+              <Link to="/dashboard">
+                <Button variant="ghost" size="sm">
+                  <LayoutDashboard className="h-4 w-4 mr-2" />
+                  Dashboard
+                </Button>
+              </Link>
+            )}
           </nav>
         </div>
 
@@ -68,9 +81,15 @@ export function Header() {
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-56" align="end">
               <DropdownMenuLabel>
-                <div className="flex flex-col space-y-1">
+                <div className="flex flex-col space-y-2">
                   <p className="text-sm font-medium">{userName}</p>
                   <p className="text-xs text-muted-foreground">{userEmail}</p>
+                  {!roleLoading && (
+                    <Badge variant={roleInfo.variant} className="w-fit">
+                      <roleInfo.icon className="h-3 w-3 mr-1" />
+                      {roleInfo.label}
+                    </Badge>
+                  )}
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
