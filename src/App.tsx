@@ -10,6 +10,7 @@ import TicketDetail from "./pages/TicketDetail";
 import Dashboard from "./pages/Dashboard";
 import AdminUsers from "./pages/AdminUsers";
 import Settings from "./pages/Settings";
+import TeamDirectory from "./pages/TeamDirectory";
 import Auth from "./pages/Auth";
 import NotFound from "./pages/NotFound";
 
@@ -61,6 +62,14 @@ const App = () => (
               element={
                 <ProtectedRoute>
                   <Settings />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/team"
+              element={
+                <ProtectedRoute>
+                  <TeamDirectory />
                 </ProtectedRoute>
               }
             />
