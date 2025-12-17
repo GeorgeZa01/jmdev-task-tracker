@@ -1,12 +1,14 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Header } from '@/components/layout/Header';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUserRole } from '@/hooks/useUserRole';
+import { useMyProfile, useUpdateProfile } from '@/hooks/useProfiles';
 import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Card,
   CardContent,
@@ -16,7 +18,7 @@ import {
 } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { toast } from 'sonner';
-import { Loader2, Settings as SettingsIcon, User, Shield, UserCog, KeyRound } from 'lucide-react';
+import { Loader2, Settings as SettingsIcon, User, Shield, UserCog, KeyRound, Phone, Building } from 'lucide-react';
 
 const roleConfig = {
   admin: { label: 'Admin', variant: 'default' as const, icon: Shield },
@@ -27,31 +29,40 @@ const roleConfig = {
 export default function Settings() {
   const { user } = useAuth();
   const { data: role, isLoading: roleLoading } = useUserRole();
+  const { data: profile, isLoading: profileLoading } = useMyProfile();
+  const updateProfile = useUpdateProfile();
 
-  const [displayName, setDisplayName] = useState(user?.user_metadata?.full_name || '');
-  const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+  const [fullName, setFullName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [department, setDepartment] = useState('');
+  const [bio, setBio] = useState('');
 
-  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isUpdatingPassword, setIsUpdatingPassword] = useState(false);
 
-  const handleUpdateProfile = async () => {
-    if (!displayName.trim()) return;
-
-    setIsUpdatingProfile(true);
-    try {
-      const { error } = await supabase.auth.updateUser({
-        data: { full_name: displayName },
-      });
-
-      if (error) throw error;
-      toast.success('Profile updated successfully');
-    } catch (error) {
-      toast.error('Failed to update profile');
-    } finally {
-      setIsUpdatingProfile(false);
+  // Initialize form with profile data
+  useEffect(() => {
+    if (profile) {
+      setFullName(profile.full_name || '');
+      setPhone(profile.phone || '');
+      setDepartment(profile.department || '');
+      setBio(profile.bio || '');
     }
+  }, [profile]);
+
+  const handleUpdateProfile = async () => {
+    await updateProfile.mutateAsync({
+      full_name: fullName,
+      phone,
+      department,
+      bio,
+    });
+
+    // Also update auth metadata
+    await supabase.auth.updateUser({
+      data: { full_name: fullName },
+    });
   };
 
   const handleUpdatePassword = async () => {
@@ -73,7 +84,6 @@ export default function Settings() {
 
       if (error) throw error;
       toast.success('Password updated successfully');
-      setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
     } catch (error) {
@@ -85,6 +95,17 @@ export default function Settings() {
 
   const currentRole = role || 'user';
   const roleInfo = roleConfig[currentRole];
+
+  if (profileLoading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Header />
+        <main className="container py-6 flex items-center justify-center">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -110,7 +131,7 @@ export default function Settings() {
                 Profile
               </CardTitle>
               <CardDescription>
-                Your personal information
+                Your personal information visible to other team members
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -123,12 +144,51 @@ export default function Settings() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="displayName">Display Name</Label>
+                <Label htmlFor="fullName">Full Name</Label>
                 <Input
-                  id="displayName"
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  placeholder="Your name"
+                  id="fullName"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Your full name"
+                />
+              </div>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="phone" className="flex items-center gap-2">
+                    <Phone className="h-4 w-4" />
+                    Phone
+                  </Label>
+                  <Input
+                    id="phone"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="+1 (555) 123-4567"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="department" className="flex items-center gap-2">
+                    <Building className="h-4 w-4" />
+                    Department
+                  </Label>
+                  <Input
+                    id="department"
+                    value={department}
+                    onChange={(e) => setDepartment(e.target.value)}
+                    placeholder="Engineering, Sales, etc."
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="bio">Bio</Label>
+                <Textarea
+                  id="bio"
+                  value={bio}
+                  onChange={(e) => setBio(e.target.value)}
+                  placeholder="A short bio about yourself..."
+                  rows={3}
                 />
               </div>
 
@@ -151,10 +211,10 @@ export default function Settings() {
 
               <Button
                 onClick={handleUpdateProfile}
-                disabled={isUpdatingProfile || !displayName.trim()}
+                disabled={updateProfile.isPending}
               >
-                {isUpdatingProfile && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                Save Changes
+                {updateProfile.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Save Profile
               </Button>
             </CardContent>
           </Card>

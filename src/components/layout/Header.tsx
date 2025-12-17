@@ -12,7 +12,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
-import { TicketCheck, LayoutDashboard, Settings, LogOut, User, Shield, UserCog } from 'lucide-react';
+import { TicketCheck, LayoutDashboard, Settings, LogOut, User, Shield, UserCog, Users } from 'lucide-react';
 
 const roleConfig = {
   admin: { label: 'Admin', variant: 'default' as const, icon: Shield },
@@ -57,6 +57,12 @@ export function Header() {
               <Button variant="ghost" size="sm">
                 <TicketCheck className="h-4 w-4 mr-2" />
                 Tickets
+              </Button>
+            </Link>
+            <Link to="/team">
+              <Button variant="ghost" size="sm">
+                <Users className="h-4 w-4 mr-2" />
+                Team
               </Button>
             </Link>
             {(currentRole === 'admin' || currentRole === 'agent') && (
