@@ -67,6 +67,14 @@ export function Header() {
                 </Button>
               </Link>
             )}
+            {currentRole === 'admin' && (
+              <Link to="/admin/users">
+                <Button variant="ghost" size="sm">
+                  <UserCog className="h-4 w-4 mr-2" />
+                  Users
+                </Button>
+              </Link>
+            )}
           </nav>
         </div>
 
@@ -93,14 +101,12 @@ export function Header() {
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />
-              <DropdownMenuItem>
-                <User className="mr-2 h-4 w-4" />
-                Profile
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <Settings className="mr-2 h-4 w-4" />
-                Settings
-              </DropdownMenuItem>
+              <Link to="/settings">
+                <DropdownMenuItem>
+                  <Settings className="mr-2 h-4 w-4" />
+                  Settings
+                </DropdownMenuItem>
+              </Link>
               <DropdownMenuSeparator />
               <DropdownMenuItem className="text-destructive" onClick={handleSignOut}>
                 <LogOut className="mr-2 h-4 w-4" />
