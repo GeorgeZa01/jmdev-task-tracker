@@ -1,0 +1,17 @@
+{
+  "name": "JMdev Tickets",
+  "short_name": "JMdev Tickets",
+  "description": "A powerful GitHub-style ticketing system for tracking issues, bugs, and feature requests.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#000000",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "48x48",
+      "type": "image/x-icon"
+    }
+  ]
+}
