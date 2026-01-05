@@ -26,6 +26,7 @@ export default function TicketList() {
         !searchQuery ||
         ticket.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
         ticket.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        ticket.author.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         `#${ticket.ticketNumber}`.includes(searchQuery);
 
       const matchesStatus = statusFilter === 'all' || ticket.status === statusFilter;
