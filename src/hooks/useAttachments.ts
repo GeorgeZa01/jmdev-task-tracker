@@ -44,10 +44,10 @@ export function useUploadAttachment() {
 
       if (uploadError) throw uploadError;
 
-      // Get public URL
-      const { data: urlData } = supabase.storage
+      // Get signed URL (bucket is now private)
+      const { data: urlData } = await supabase.storage
         .from('ticket-attachments')
-        .getPublicUrl(fileName);
+        .createSignedUrl(fileName, 3600); // 1 hour expiry
 
       // Save attachment record
       const { data, error } = await supabase
@@ -65,7 +65,7 @@ export function useUploadAttachment() {
 
       if (error) throw error;
 
-      return { ...data, publicUrl: urlData.publicUrl };
+      return { ...data, publicUrl: urlData?.signedUrl || '' };
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['attachments', variables.ticketId] });
@@ -99,9 +99,11 @@ export function useDeleteAttachment() {
   });
 }
 
-export function getAttachmentUrl(filePath: string) {
-  const { data } = supabase.storage
+export async function getAttachmentUrl(filePath: string) {
+  const { data, error } = await supabase.storage
     .from('ticket-attachments')
-    .getPublicUrl(filePath);
-  return data.publicUrl;
+    .createSignedUrl(filePath, 3600); // 1 hour expiry
+  
+  if (error) throw error;
+  return data.signedUrl;
 }

@@ -49,8 +49,9 @@ export function useAllProfiles() {
   return useQuery({
     queryKey: ['profiles'],
     queryFn: async () => {
+      // Use the public_profiles view which hides sensitive data for other users
       const { data, error } = await supabase
-        .from('profiles')
+        .from('public_profiles')
         .select('*')
         .order('full_name', { ascending: true });
 
