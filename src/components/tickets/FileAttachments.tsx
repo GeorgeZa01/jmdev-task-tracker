@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useAttachments, useUploadAttachment, useDeleteAttachment, getAttachmentUrl } from '@/hooks/useAttachments';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -20,6 +20,78 @@ function formatFileSize(bytes: number) {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+interface AttachmentItemProps {
+  attachment: {
+    id: string;
+    file_path: string;
+    file_name: string;
+    file_type: string;
+    file_size: number;
+    uploaded_by: string;
+    created_at: string;
+  };
+  onDelete: (id: string, filePath: string, fileName: string) => void;
+  isDeleting: boolean;
+}
+
+function AttachmentItem({ attachment, onDelete, isDeleting }: AttachmentItemProps) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const FileIcon = getFileIcon(attachment.file_type);
+
+  useEffect(() => {
+    let mounted = true;
+    getAttachmentUrl(attachment.file_path)
+      .then((signedUrl) => {
+        if (mounted) {
+          setUrl(signedUrl);
+          setLoading(false);
+        }
+      })
+      .catch(() => {
+        if (mounted) setLoading(false);
+      });
+    return () => { mounted = false; };
+  }, [attachment.file_path]);
+
+  return (
+    <div className="flex items-center justify-between p-2 border border-border bg-muted/30">
+      <div className="flex items-center gap-3 min-w-0">
+        <FileIcon className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
+        <div className="min-w-0">
+          <p className="text-sm font-medium truncate">{attachment.file_name}</p>
+          <p className="text-xs text-muted-foreground">
+            {formatFileSize(attachment.file_size)} · {attachment.uploaded_by} ·{' '}
+            {formatDistanceToNow(new Date(attachment.created_at), { addSuffix: true })}
+          </p>
+        </div>
+      </div>
+      <div className="flex items-center gap-1">
+        {loading ? (
+          <Button variant="ghost" size="icon" className="h-8 w-8" disabled>
+            <Loader2 className="h-4 w-4 animate-spin" />
+          </Button>
+        ) : url ? (
+          <Button variant="ghost" size="icon" asChild className="h-8 w-8">
+            <a href={url} download={attachment.file_name} target="_blank" rel="noopener noreferrer">
+              <Download className="h-4 w-4" />
+            </a>
+          </Button>
+        ) : null}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 text-destructive hover:text-destructive"
+          onClick={() => onDelete(attachment.id, attachment.file_path, attachment.file_name)}
+          disabled={isDeleting}
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
+  );
 }
 
 export function FileAttachments({ ticketId }: FileAttachmentsProps) {
@@ -148,49 +220,14 @@ export function FileAttachments({ ticketId }: FileAttachmentsProps) {
         </div>
       ) : attachments.length > 0 ? (
         <div className="space-y-2">
-          {attachments.map((attachment) => {
-            const FileIcon = getFileIcon(attachment.file_type);
-            const url = getAttachmentUrl(attachment.file_path);
-
-            return (
-              <div
-                key={attachment.id}
-                className="flex items-center justify-between p-2 border border-border bg-muted/30"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <FileIcon className="h-5 w-5 flex-shrink-0 text-muted-foreground" />
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium truncate">{attachment.file_name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {formatFileSize(attachment.file_size)} · {attachment.uploaded_by} ·{' '}
-                      {formatDistanceToNow(new Date(attachment.created_at), { addSuffix: true })}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    asChild
-                    className="h-8 w-8"
-                  >
-                    <a href={url} download={attachment.file_name} target="_blank" rel="noopener noreferrer">
-                      <Download className="h-4 w-4" />
-                    </a>
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-destructive hover:text-destructive"
-                    onClick={() => handleDelete(attachment.id, attachment.file_path, attachment.file_name)}
-                    disabled={deleteAttachment.isPending}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            );
-          })}
+          {attachments.map((attachment) => (
+            <AttachmentItem
+              key={attachment.id}
+              attachment={attachment}
+              onDelete={handleDelete}
+              isDeleting={deleteAttachment.isPending}
+            />
+          ))}
         </div>
       ) : (
         <p className="text-center text-sm text-muted-foreground py-4">
