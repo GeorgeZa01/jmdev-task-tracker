@@ -3,6 +3,23 @@ import { useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { Ticket, TicketStatus, TicketPriority, TicketLabel } from '@/types/ticket';
 import { Tables, TablesInsert } from '@/integrations/supabase/types';
+import { z } from 'zod';
+
+// Input validation schemas — enforce length and shape before hitting the DB.
+const ticketInputSchema = z.object({
+  title: z.string().trim().min(1, 'Title is required').max(200, 'Title must be 200 characters or fewer'),
+  description: z.string().trim().max(10000, 'Description must be 10,000 characters or fewer').optional().default(''),
+  priority: z.enum(['low', 'medium', 'high', 'critical']),
+});
+
+const commentInputSchema = z.object({
+  content: z.string().trim().min(1, 'Comment cannot be empty').max(5000, 'Comment must be 5,000 characters or fewer'),
+});
+
+const ticketUpdateSchema = z.object({
+  title: z.string().trim().min(1).max(200).optional(),
+  description: z.string().trim().max(10000).optional(),
+});
 
 type DbTicket = Tables<'tickets'>;
 type DbComment = Tables<'comments'>;
