@@ -199,11 +199,18 @@ export function useCreateTicket() {
       assigneeId?: string;
       assigneeName?: string;
     }) => {
+      // Validate user-supplied fields before persisting
+      ticketInputSchema.parse({
+        title: data.title,
+        description: data.description,
+        priority: data.priority,
+      });
+
       const { data: ticket, error } = await supabase
         .from('tickets')
         .insert({
-          title: data.title,
-          description: data.description,
+          title: data.title.trim(),
+          description: data.description?.trim() ?? '',
           priority: data.priority,
           labels: data.labels,
           author_name: data.authorName,
@@ -245,6 +252,14 @@ export function useUpdateTicket() {
       updates: Partial<TablesInsert<'tickets'>>;
       actorName: string;
     }) => {
+      // Validate mutable user-supplied fields
+      if (updates.title !== undefined || updates.description !== undefined) {
+        ticketUpdateSchema.parse({
+          title: updates.title ?? undefined,
+          description: updates.description ?? undefined,
+        });
+      }
+
       const { data: ticket, error } = await supabase
         .from('tickets')
         .update(updates)
@@ -287,11 +302,13 @@ export function useAddComment() {
       authorName: string;
       authorId?: string;
     }) => {
+      commentInputSchema.parse({ content });
+
       const { data, error } = await supabase
         .from('comments')
         .insert({
           ticket_id: ticketId,
-          content,
+          content: content.trim(),
           author_name: authorName,
           author_id: authorId,
         })
