@@ -22,7 +22,10 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('Uncaught error:', error, errorInfo);
+    if (import.meta.env.DEV) {
+      console.error('Uncaught error:', error, errorInfo);
+    }
+    // In production, forward to an error monitoring service (e.g. Sentry) here.
   }
 
   private handleReload = () => {
@@ -54,7 +57,7 @@ export class ErrorBoundary extends Component<Props, State> {
                 Go to Home
               </Button>
             </div>
-            {process.env.NODE_ENV === 'development' && this.state.error && (
+            {import.meta.env.DEV && this.state.error && (
               <pre className="mt-6 p-4 bg-muted text-left text-xs overflow-auto max-h-40 border border-border">
                 {this.state.error.toString()}
               </pre>
