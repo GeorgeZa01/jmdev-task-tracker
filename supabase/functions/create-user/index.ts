@@ -1,10 +1,27 @@
 import { serve } from "https://deno.land/std@0.190.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
+// Restrict CORS to known application origins. Set ALLOWED_ORIGINS as a
+// comma-separated list in the edge function secrets (e.g. "https://app.example.com,https://staging.example.com").
+const DEFAULT_ALLOWED_ORIGINS = [
+  "https://jmdev-ticketing.lovable.app",
+  "https://id-preview--fe488b1c-4b32-4126-b60d-9c9be92b62d5.lovable.app",
+  "http://localhost:8080",
+];
+
+const allowedOrigins = (Deno.env.get("ALLOWED_ORIGINS")?.split(",").map((o) => o.trim()).filter(Boolean))
+  ?? DEFAULT_ALLOWED_ORIGINS;
+
+function buildCorsHeaders(req: Request): Record<string, string> {
+  const origin = req.headers.get("Origin") ?? "";
+  const allowOrigin = allowedOrigins.includes(origin) ? origin : allowedOrigins[0];
+  return {
+    "Access-Control-Allow-Origin": allowOrigin,
+    "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Vary": "Origin",
+  };
+}
 
 interface CreateUserRequest {
   email: string;
@@ -14,6 +31,8 @@ interface CreateUserRequest {
 }
 
 serve(async (req) => {
+  const corsHeaders = buildCorsHeaders(req);
+
   // Handle CORS preflight
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -62,13 +81,24 @@ serve(async (req) => {
       );
     }
 
-    // Parse request body
-    const { email, password, fullName, role }: CreateUserRequest = await req.json();
+    // Parse and validate request body
+    const body = await req.json().catch(() => null);
+    if (!body || typeof body !== "object") {
+      return new Response(
+        JSON.stringify({ error: "Invalid JSON body" }),
+        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    const { email, password, fullName, role } = body as Partial<CreateUserRequest>;
     console.log("Creating user:", { email, fullName, role });
 
-    if (!email || !password || !fullName || !role) {
+    const emailOk = typeof email === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 255;
+    const passwordOk = typeof password === "string" && password.length >= 8 && password.length <= 128;
+    const fullNameOk = typeof fullName === "string" && fullName.trim().length >= 1 && fullName.length <= 100;
+    const roleOk = role === "admin" || role === "agent" || role === "user";
+    if (!emailOk || !passwordOk || !fullNameOk || !roleOk) {
       return new Response(
-        JSON.stringify({ error: "Missing required fields" }),
+        JSON.stringify({ error: "Invalid input" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
