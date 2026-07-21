@@ -1,7 +1,13 @@
 import { useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { useUserRole, useCanManageTicket } from '@/hooks/useUserRole';
+import {
+  useUserRole,
+  useCanEditTicketContent,
+  useCanManageTicketWorkflow,
+  useCanCommentOnTicket,
+  useCanDeleteTicket,
+} from '@/hooks/useUserRole';
 import { useTicket, useUpdateTicket, useAddComment } from '@/hooks/useTickets';
 import { Header } from '@/components/layout/Header';
 import { StatusBadge } from '@/components/tickets/StatusBadge';
@@ -53,8 +59,10 @@ export default function TicketDetail() {
   const updateTicket = useUpdateTicket();
   const addComment = useAddComment();
   
-  const canManage = useCanManageTicket(ticket?.author.id);
-  const isAdmin = role === 'admin';
+  const canEditContent = useCanEditTicketContent(ticket?.author.id);
+  const canManageWorkflow = useCanManageTicketWorkflow();
+  const canComment = useCanCommentOnTicket(ticket?.author.id);
+  const canDelete = useCanDeleteTicket();
   
   const [newComment, setNewComment] = useState('');
   const [isEditingTitle, setIsEditingTitle] = useState(false);
