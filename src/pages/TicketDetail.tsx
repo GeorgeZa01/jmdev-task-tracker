@@ -478,6 +478,7 @@ export default function TicketDetail() {
                 )}
                 
                 {/* Add Comment */}
+                {canComment ? (
                 <div className="pt-4 border-t border-border">
                   <div className="flex gap-3">
                     <Avatar className="h-8 w-8 flex-shrink-0">
@@ -525,6 +526,11 @@ export default function TicketDetail() {
                     </div>
                   </div>
                 </div>
+                ) : (
+                  <div className="pt-4 border-t border-border text-center text-sm text-muted-foreground">
+                    You don't have permission to comment on this ticket.
+                  </div>
+                )}
               </TabsContent>
               
               <TabsContent value="activity" className="p-4">
