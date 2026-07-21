@@ -112,7 +112,7 @@ export default function TicketDetail() {
   };
 
   const handleAddComment = async () => {
-    if (!newComment.trim()) return;
+    if (!newComment.trim() || !canComment) return;
 
     try {
       await addComment.mutateAsync({
