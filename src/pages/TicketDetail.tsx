@@ -136,7 +136,7 @@ export default function TicketDetail() {
   };
 
   const toggleStatus = async () => {
-    if (!canManage) return;
+    if (!canManageWorkflow) return;
     
     const newStatus = ticket.status === 'open' ? 'closed' : 'open';
     
@@ -163,7 +163,7 @@ export default function TicketDetail() {
   };
 
   const handleDeleteTicket = async () => {
-    if (!isAdmin) return;
+    if (!canDelete) return;
     
     setIsDeleting(true);
     try {
@@ -187,7 +187,7 @@ export default function TicketDetail() {
   };
 
   const handleSaveTitle = async () => {
-    if (!editTitle.trim() || !canManage) return;
+    if (!editTitle.trim() || !canManageWorkflow) return;
     
     try {
       await updateTicket.mutateAsync({
@@ -215,7 +215,7 @@ export default function TicketDetail() {
   };
 
   const handleSaveDescription = async () => {
-    if (!canManage) return;
+    if (!canManageWorkflow) return;
     
     try {
       await updateTicket.mutateAsync({
@@ -243,7 +243,7 @@ export default function TicketDetail() {
   };
 
   const handlePriorityChange = async (newPriority: TicketPriority) => {
-    if (!canManage) return;
+    if (!canManageWorkflow) return;
     
     try {
       await updateTicket.mutateAsync({
@@ -265,7 +265,7 @@ export default function TicketDetail() {
   };
 
   const handleLabelToggle = async (label: TicketLabel) => {
-    if (!canManage) return;
+    if (!canManageWorkflow) return;
     
     const newLabels = ticket.labels.includes(label)
       ? ticket.labels.filter(l => l !== label)
@@ -287,13 +287,13 @@ export default function TicketDetail() {
   };
 
   const startEditTitle = () => {
-    if (!canManage) return;
+    if (!canManageWorkflow) return;
     setEditTitle(ticket.title);
     setIsEditingTitle(true);
   };
 
   const startEditDescription = () => {
-    if (!canManage) return;
+    if (!canManageWorkflow) return;
     setEditDescription(ticket.description);
     setIsEditingDescription(true);
   };
@@ -309,7 +309,7 @@ export default function TicketDetail() {
             Back to tickets
           </Button>
           
-          {isAdmin && (
+          {canDelete && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="destructive" size="sm">
@@ -367,7 +367,7 @@ export default function TicketDetail() {
               ) : (
                 <div className="flex items-center gap-2 mb-4 group">
                   <h1 className="text-2xl font-bold">{ticket.title}</h1>
-                  {canManage && (
+                  {canManageWorkflow && (
                     <Button 
                       size="icon" 
                       variant="ghost" 
@@ -407,7 +407,7 @@ export default function TicketDetail() {
                     commented {formatDistanceToNow(ticket.createdAt, { addSuffix: true })}
                   </span>
                 </div>
-                {!isEditingDescription && canManage && (
+                {!isEditingDescription && canManageWorkflow && (
                   <Button 
                     size="sm" 
                     variant="ghost"
@@ -495,7 +495,7 @@ export default function TicketDetail() {
                       />
                       
                       <div className="flex justify-end gap-2">
-                        {canManage && (
+                        {canManageWorkflow && (
                           <Button
                             variant="outline"
                             onClick={toggleStatus}
@@ -538,7 +538,7 @@ export default function TicketDetail() {
             {/* Priority */}
             <div className="border-2 border-border bg-card p-4">
               <h3 className="font-semibold mb-3">Priority</h3>
-              {canManage ? (
+              {canManageWorkflow ? (
                 <Select value={ticket.priority} onValueChange={(v) => handlePriorityChange(v as TicketPriority)}>
                   <SelectTrigger>
                     <SelectValue>
@@ -568,7 +568,7 @@ export default function TicketDetail() {
             {/* Labels */}
             <div className="border-2 border-border bg-card p-4">
               <h3 className="font-semibold mb-3">Labels</h3>
-              {canManage ? (
+              {canManageWorkflow ? (
                 <div className="space-y-2">
                   {ALL_LABELS.map((label) => (
                     <div key={label} className="flex items-center gap-2">
