@@ -187,7 +187,7 @@ export default function TicketDetail() {
   };
 
   const handleSaveTitle = async () => {
-    if (!editTitle.trim() || !canManageWorkflow) return;
+    if (!editTitle.trim() || !canEditContent) return;
     
     try {
       await updateTicket.mutateAsync({
@@ -215,7 +215,7 @@ export default function TicketDetail() {
   };
 
   const handleSaveDescription = async () => {
-    if (!canManageWorkflow) return;
+    if (!canEditContent) return;
     
     try {
       await updateTicket.mutateAsync({
@@ -287,13 +287,13 @@ export default function TicketDetail() {
   };
 
   const startEditTitle = () => {
-    if (!canManageWorkflow) return;
+    if (!canEditContent) return;
     setEditTitle(ticket.title);
     setIsEditingTitle(true);
   };
 
   const startEditDescription = () => {
-    if (!canManageWorkflow) return;
+    if (!canEditContent) return;
     setEditDescription(ticket.description);
     setIsEditingDescription(true);
   };
@@ -367,7 +367,7 @@ export default function TicketDetail() {
               ) : (
                 <div className="flex items-center gap-2 mb-4 group">
                   <h1 className="text-2xl font-bold">{ticket.title}</h1>
-                  {canManageWorkflow && (
+                  {canEditContent && (
                     <Button 
                       size="icon" 
                       variant="ghost" 
@@ -407,7 +407,7 @@ export default function TicketDetail() {
                     commented {formatDistanceToNow(ticket.createdAt, { addSuffix: true })}
                   </span>
                 </div>
-                {!isEditingDescription && canManageWorkflow && (
+                {!isEditingDescription && canEditContent && (
                   <Button 
                     size="sm" 
                     variant="ghost"
