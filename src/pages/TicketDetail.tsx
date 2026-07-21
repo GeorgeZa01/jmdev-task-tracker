@@ -1,7 +1,13 @@
 import { useState } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { useUserRole, useCanManageTicket } from '@/hooks/useUserRole';
+import {
+  useUserRole,
+  useCanEditTicketContent,
+  useCanManageTicketWorkflow,
+  useCanCommentOnTicket,
+  useCanDeleteTicket,
+} from '@/hooks/useUserRole';
 import { useTicket, useUpdateTicket, useAddComment } from '@/hooks/useTickets';
 import { Header } from '@/components/layout/Header';
 import { StatusBadge } from '@/components/tickets/StatusBadge';
@@ -53,8 +59,10 @@ export default function TicketDetail() {
   const updateTicket = useUpdateTicket();
   const addComment = useAddComment();
   
-  const canManage = useCanManageTicket(ticket?.author.id);
-  const isAdmin = role === 'admin';
+  const canEditContent = useCanEditTicketContent(ticket?.author.id);
+  const canManageWorkflow = useCanManageTicketWorkflow();
+  const canComment = useCanCommentOnTicket(ticket?.author.id);
+  const canDelete = useCanDeleteTicket();
   
   const [newComment, setNewComment] = useState('');
   const [isEditingTitle, setIsEditingTitle] = useState(false);
@@ -104,7 +112,7 @@ export default function TicketDetail() {
   };
 
   const handleAddComment = async () => {
-    if (!newComment.trim()) return;
+    if (!newComment.trim() || !canComment) return;
 
     try {
       await addComment.mutateAsync({
@@ -128,7 +136,7 @@ export default function TicketDetail() {
   };
 
   const toggleStatus = async () => {
-    if (!canManage) return;
+    if (!canManageWorkflow) return;
     
     const newStatus = ticket.status === 'open' ? 'closed' : 'open';
     
@@ -155,7 +163,7 @@ export default function TicketDetail() {
   };
 
   const handleDeleteTicket = async () => {
-    if (!isAdmin) return;
+    if (!canDelete) return;
     
     setIsDeleting(true);
     try {
@@ -179,7 +187,7 @@ export default function TicketDetail() {
   };
 
   const handleSaveTitle = async () => {
-    if (!editTitle.trim() || !canManage) return;
+    if (!editTitle.trim() || !canEditContent) return;
     
     try {
       await updateTicket.mutateAsync({
@@ -207,7 +215,7 @@ export default function TicketDetail() {
   };
 
   const handleSaveDescription = async () => {
-    if (!canManage) return;
+    if (!canEditContent) return;
     
     try {
       await updateTicket.mutateAsync({
@@ -235,7 +243,7 @@ export default function TicketDetail() {
   };
 
   const handlePriorityChange = async (newPriority: TicketPriority) => {
-    if (!canManage) return;
+    if (!canManageWorkflow) return;
     
     try {
       await updateTicket.mutateAsync({
@@ -257,7 +265,7 @@ export default function TicketDetail() {
   };
 
   const handleLabelToggle = async (label: TicketLabel) => {
-    if (!canManage) return;
+    if (!canManageWorkflow) return;
     
     const newLabels = ticket.labels.includes(label)
       ? ticket.labels.filter(l => l !== label)
@@ -279,13 +287,13 @@ export default function TicketDetail() {
   };
 
   const startEditTitle = () => {
-    if (!canManage) return;
+    if (!canEditContent) return;
     setEditTitle(ticket.title);
     setIsEditingTitle(true);
   };
 
   const startEditDescription = () => {
-    if (!canManage) return;
+    if (!canEditContent) return;
     setEditDescription(ticket.description);
     setIsEditingDescription(true);
   };
@@ -301,7 +309,7 @@ export default function TicketDetail() {
             Back to tickets
           </Button>
           
-          {isAdmin && (
+          {canDelete && (
             <AlertDialog>
               <AlertDialogTrigger asChild>
                 <Button variant="destructive" size="sm">
@@ -359,7 +367,7 @@ export default function TicketDetail() {
               ) : (
                 <div className="flex items-center gap-2 mb-4 group">
                   <h1 className="text-2xl font-bold">{ticket.title}</h1>
-                  {canManage && (
+                  {canEditContent && (
                     <Button 
                       size="icon" 
                       variant="ghost" 
@@ -399,7 +407,7 @@ export default function TicketDetail() {
                     commented {formatDistanceToNow(ticket.createdAt, { addSuffix: true })}
                   </span>
                 </div>
-                {!isEditingDescription && canManage && (
+                {!isEditingDescription && canEditContent && (
                   <Button 
                     size="sm" 
                     variant="ghost"
@@ -470,6 +478,7 @@ export default function TicketDetail() {
                 )}
                 
                 {/* Add Comment */}
+                {canComment ? (
                 <div className="pt-4 border-t border-border">
                   <div className="flex gap-3">
                     <Avatar className="h-8 w-8 flex-shrink-0">
@@ -487,7 +496,7 @@ export default function TicketDetail() {
                       />
                       
                       <div className="flex justify-end gap-2">
-                        {canManage && (
+                        {canManageWorkflow && (
                           <Button
                             variant="outline"
                             onClick={toggleStatus}
@@ -517,6 +526,11 @@ export default function TicketDetail() {
                     </div>
                   </div>
                 </div>
+                ) : (
+                  <div className="pt-4 border-t border-border text-center text-sm text-muted-foreground">
+                    You don't have permission to comment on this ticket.
+                  </div>
+                )}
               </TabsContent>
               
               <TabsContent value="activity" className="p-4">
@@ -530,7 +544,7 @@ export default function TicketDetail() {
             {/* Priority */}
             <div className="border-2 border-border bg-card p-4">
               <h3 className="font-semibold mb-3">Priority</h3>
-              {canManage ? (
+              {canManageWorkflow ? (
                 <Select value={ticket.priority} onValueChange={(v) => handlePriorityChange(v as TicketPriority)}>
                   <SelectTrigger>
                     <SelectValue>
@@ -560,7 +574,7 @@ export default function TicketDetail() {
             {/* Labels */}
             <div className="border-2 border-border bg-card p-4">
               <h3 className="font-semibold mb-3">Labels</h3>
-              {canManage ? (
+              {canManageWorkflow ? (
                 <div className="space-y-2">
                   {ALL_LABELS.map((label) => (
                     <div key={label} className="flex items-center gap-2">
