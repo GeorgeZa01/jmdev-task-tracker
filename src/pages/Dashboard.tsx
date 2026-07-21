@@ -4,6 +4,7 @@ import { Header } from '@/components/layout/Header';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { StatusBadge } from '@/components/tickets/StatusBadge';
 import { PriorityBadge } from '@/components/tickets/PriorityBadge';
+import { OnboardingCard } from '@/components/dashboard/OnboardingCard';
 import {
   TicketCheck,
   CircleDot,
@@ -52,6 +53,8 @@ export default function Dashboard() {
             {role === 'admin' ? 'Admin' : 'Agent'} overview of ticket activity
           </p>
         </div>
+
+        {role === 'admin' && <OnboardingCard />}
 
         {/* Stats Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
