@@ -43,6 +43,39 @@ export function useUsers() {
   });
 }
 
+export type UserSortKey =
+  | 'fullName'
+  | 'email'
+  | 'role'
+  | 'createdAt'
+  | 'lastSignInAt'
+  | 'deactivated';
+
+export interface UsersPageParams {
+  page: number;
+  pageSize: number;
+  sortBy: UserSortKey;
+  sortDir: 'asc' | 'desc';
+  search: string;
+  roleFilter: AppRole | 'all';
+  statusFilter: 'all' | 'active' | 'deactivated';
+}
+
+export interface UsersPageResult {
+  users: ManagedUser[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export function useUsersPage(params: UsersPageParams) {
+  return useQuery({
+    queryKey: ['managed-users-page', params],
+    queryFn: () => invokeManageUsers<UsersPageResult>({ action: 'list', ...params }),
+    placeholderData: (prev) => prev,
+  });
+}
+
 interface CreateUserData {
   email: string;
   password: string;
