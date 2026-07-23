@@ -1,15 +1,16 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { Header } from '@/components/layout/Header';
 import { useAuth } from '@/contexts/AuthContext';
 import { useUserRole } from '@/hooks/useUserRole';
 import {
-  useUsers,
+  useUsersPage,
   useCreateUser,
   useUpdateUser,
   useSetUserActive,
   type ManagedUser,
   type AppRole,
+  type UserSortKey,
 } from '@/hooks/useUsers';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -68,6 +69,13 @@ import {
   UserX,
   UserCheck,
   Search,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
+  ChevronLeft,
+  ChevronRight,
+  CheckCircle2,
+  XCircle,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -80,10 +88,19 @@ const roleConfig: Record<AppRole, { label: string; variant: 'default' | 'seconda
 type RoleFilter = AppRole | 'all';
 type StatusFilter = 'all' | 'active' | 'deactivated';
 
+interface BulkOutcome {
+  kind: 'role' | 'deactivate' | 'reactivate';
+  targetRole?: AppRole;
+  successes: { id: string; label: string }[];
+  failures: { id: string; label: string; message: string }[];
+  skipped: { id: string; label: string; reason: string }[];
+}
+
+const PAGE_SIZES = [10, 25, 50, 100] as const;
+
 export default function AdminUsers() {
   const { user: currentUser } = useAuth();
   const { data: role, isLoading: roleLoading } = useUserRole();
-  const { data: users, isLoading: usersLoading } = useUsers();
   const createUser = useCreateUser();
   const updateUser = useUpdateUser();
   const setActive = useSetUserActive();
@@ -103,33 +120,61 @@ export default function AdminUsers() {
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
+  // Debounced search sent to the server so typing doesn't refetch on every key.
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search.trim()), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // Pagination + sorting state, sent to the edge function.
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(25);
+  const [sortBy, setSortBy] = useState<UserSortKey>('createdAt');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc');
+
+  // Reset to page 1 whenever the query narrows/widens.
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, roleFilter, statusFilter, pageSize, sortBy, sortDir]);
+
+  const {
+    data: pageData,
+    isLoading: usersLoading,
+    isFetching,
+  } = useUsersPage({
+    page,
+    pageSize,
+    sortBy,
+    sortDir,
+    search: debouncedSearch,
+    roleFilter,
+    statusFilter,
+  });
+
+  const users = pageData?.users ?? [];
+  const total = pageData?.total ?? 0;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [selectedMeta, setSelectedMeta] = useState<Map<string, ManagedUser>>(new Map());
   const [bulkRole, setBulkRole] = useState<AppRole | ''>('');
   const [bulkBusy, setBulkBusy] = useState<null | 'role' | 'deactivate' | 'reactivate'>(null);
   const [confirmBulkDeactivate, setConfirmBulkDeactivate] = useState(false);
+  const [confirmBulkReactivate, setConfirmBulkReactivate] = useState(false);
+  const [confirmBulkRole, setConfirmBulkRole] = useState(false);
+  const [bulkResult, setBulkResult] = useState<BulkOutcome | null>(null);
 
-  const filtered = useMemo(() => {
-    if (!users) return [] as ManagedUser[];
-    const q = search.trim().toLowerCase();
-    return users.filter((u) => {
-      if (roleFilter !== 'all' && u.role !== roleFilter) return false;
-      if (statusFilter === 'active' && u.deactivated) return false;
-      if (statusFilter === 'deactivated' && !u.deactivated) return false;
-      if (!q) return true;
-      return (
-        u.email.toLowerCase().includes(q) ||
-        (u.fullName ?? '').toLowerCase().includes(q)
-      );
-    });
-  }, [users, search, roleFilter, statusFilter]);
+  // The visible rows are already server-filtered/sorted/paged.
+  const visible = users;
 
   const selectableIds = useMemo(
-    () => filtered.filter((u) => u.id !== currentUser?.id).map((u) => u.id),
-    [filtered, currentUser?.id],
+    () => visible.filter((u) => u.id !== currentUser?.id).map((u) => u.id),
+    [visible, currentUser?.id],
   );
   const selectedList = useMemo(
-    () => (users ?? []).filter((u) => selected.has(u.id)),
-    [users, selected],
+    () => Array.from(selectedMeta.values()),
+    [selectedMeta],
   );
   const allVisibleSelected =
     selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
@@ -143,6 +188,16 @@ export default function AdminUsers() {
       else next.delete(id);
       return next;
     });
+    setSelectedMeta((prev) => {
+      const next = new Map(prev);
+      if (checked) {
+        const u = visible.find((v) => v.id === id);
+        if (u) next.set(id, u);
+      } else {
+        next.delete(id);
+      }
+      return next;
+    });
   };
   const toggleAllVisible = (checked: boolean) => {
     setSelected((prev) => {
@@ -153,24 +208,78 @@ export default function AdminUsers() {
       }
       return next;
     });
+    setSelectedMeta((prev) => {
+      const next = new Map(prev);
+      for (const id of selectableIds) {
+        if (checked) {
+          const u = visible.find((v) => v.id === id);
+          if (u) next.set(id, u);
+        } else {
+          next.delete(id);
+        }
+      }
+      return next;
+    });
   };
-  const clearSelection = () => setSelected(new Set());
+  const clearSelection = () => {
+    setSelected(new Set());
+    setSelectedMeta(new Map());
+  };
+
+  const labelFor = (u: ManagedUser) => u.fullName?.trim() || u.email;
 
   const runBulk = async (
     kind: 'role' | 'deactivate' | 'reactivate',
     fn: (u: ManagedUser) => Promise<unknown>,
-    filterFn: (u: ManagedUser) => boolean = () => true,
+    filterFn: (u: ManagedUser) => boolean,
+    skipReason: string,
+    targetRole?: AppRole,
   ) => {
-    const targets = selectedList.filter(filterFn);
-    if (targets.length === 0) return;
+    if (selectedList.length === 0) return;
     setBulkBusy(kind);
-    try {
-      await Promise.all(targets.map(fn));
-      clearSelection();
-      if (kind === 'role') setBulkRole('');
-    } finally {
-      setBulkBusy(null);
+    const outcome: BulkOutcome = {
+      kind,
+      targetRole,
+      successes: [],
+      failures: [],
+      skipped: [],
+    };
+    const results = await Promise.all(
+      selectedList.map(async (u) => {
+        if (!filterFn(u)) {
+          outcome.skipped.push({ id: u.id, label: labelFor(u), reason: skipReason });
+          return;
+        }
+        try {
+          await fn(u);
+          outcome.successes.push({ id: u.id, label: labelFor(u) });
+        } catch (err) {
+          outcome.failures.push({
+            id: u.id,
+            label: labelFor(u),
+            message: err instanceof Error ? err.message : 'Unknown error',
+          });
+        }
+      }),
+    );
+    void results;
+    setBulkBusy(null);
+    setBulkResult(outcome);
+    // Only clear the ones that succeeded so failures stay selected for retry.
+    if (outcome.successes.length > 0) {
+      const successIds = new Set(outcome.successes.map((s) => s.id));
+      setSelected((prev) => {
+        const next = new Set(prev);
+        for (const id of successIds) next.delete(id);
+        return next;
+      });
+      setSelectedMeta((prev) => {
+        const next = new Map(prev);
+        for (const id of successIds) next.delete(id);
+        return next;
+      });
     }
+    if (kind === 'role') setBulkRole('');
   };
 
   const applyBulkRole = () => {
@@ -179,6 +288,8 @@ export default function AdminUsers() {
       'role',
       (u) => updateUser.mutateAsync({ userId: u.id, role: bulkRole as AppRole }),
       (u) => u.role !== bulkRole,
+      'Already has this role',
+      bulkRole as AppRole,
     );
   };
   const applyBulkDeactivate = () =>
@@ -186,19 +297,21 @@ export default function AdminUsers() {
       'deactivate',
       (u) => setActive.mutateAsync({ userId: u.id, active: false }),
       (u) => !u.deactivated,
+      'Already deactivated',
     );
   const applyBulkReactivate = () =>
     runBulk(
       'reactivate',
       (u) => setActive.mutateAsync({ userId: u.id, active: true }),
       (u) => u.deactivated,
+      'Already active',
     );
 
   if (!roleLoading && role !== 'admin') {
     return <Navigate to="/" replace />;
   }
 
-  if (roleLoading || usersLoading) {
+  if (roleLoading || (usersLoading && !pageData)) {
     return (
       <div className="min-h-screen bg-background">
         <Header />
@@ -252,10 +365,38 @@ export default function AdminUsers() {
     }
   };
 
-  const total = users?.length ?? 0;
-  const adminCount = users?.filter((u) => u.role === 'admin').length ?? 0;
-  const agentCount = users?.filter((u) => u.role === 'agent').length ?? 0;
-  const activeCount = users?.filter((u) => !u.deactivated).length ?? 0;
+  const rangeStart = total === 0 ? 0 : (page - 1) * pageSize + 1;
+  const rangeEnd = Math.min(total, page * pageSize);
+
+  const toggleSort = (key: UserSortKey) => {
+    if (sortBy === key) {
+      setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortBy(key);
+      setSortDir(key === 'fullName' || key === 'email' || key === 'role' ? 'asc' : 'desc');
+    }
+  };
+
+  const SortHeader = ({ label, sortKey, className }: { label: string; sortKey: UserSortKey; className?: string }) => {
+    const active = sortBy === sortKey;
+    const Icon = active ? (sortDir === 'asc' ? ArrowUp : ArrowDown) : ArrowUpDown;
+    return (
+      <TableHead className={className}>
+        <button
+          type="button"
+          onClick={() => toggleSort(sortKey)}
+          className="inline-flex items-center gap-1 hover:text-foreground transition-colors"
+        >
+          {label}
+          <Icon className={`h-3 w-3 ${active ? 'text-foreground' : 'text-muted-foreground/60'}`} />
+        </button>
+      </TableHead>
+    );
+  };
+
+  const bulkRoleEligible = selectedList.filter((u) => bulkRole && u.role !== bulkRole);
+  const bulkDeactivateEligible = selectedList.filter((u) => !u.deactivated);
+  const bulkReactivateEligible = selectedList.filter((u) => u.deactivated);
 
   return (
     <div className="min-h-screen bg-background">
@@ -355,20 +496,16 @@ export default function AdminUsers() {
           </Dialog>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <Card><CardContent className="pt-6"><div className="text-2xl font-bold">{total}</div><div className="text-xs text-muted-foreground">Total users</div></CardContent></Card>
-          <Card><CardContent className="pt-6"><div className="text-2xl font-bold">{activeCount}</div><div className="text-xs text-muted-foreground">Active</div></CardContent></Card>
-          <Card><CardContent className="pt-6"><div className="text-2xl font-bold">{adminCount}</div><div className="text-xs text-muted-foreground">Admins</div></CardContent></Card>
-          <Card><CardContent className="pt-6"><div className="text-2xl font-bold">{agentCount}</div><div className="text-xs text-muted-foreground">Support agents</div></CardContent></Card>
-        </div>
-
         <Card className="border-2">
           <CardHeader>
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div>
                 <CardTitle>All users</CardTitle>
                 <CardDescription>
-                  {filtered.length} shown{selected.size > 0 ? ` · ${selected.size} selected` : ''}
+                  {total === 0
+                    ? 'No users match the current filters'
+                    : `Showing ${rangeStart}–${rangeEnd} of ${total}`}
+                  {selected.size > 0 ? ` · ${selected.size} selected` : ''}
                 </CardDescription>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
@@ -419,8 +556,8 @@ export default function AdminUsers() {
                   </Select>
                   <Button
                     size="sm"
-                    onClick={applyBulkRole}
-                    disabled={!bulkRole || bulkBusy !== null}
+                    onClick={() => setConfirmBulkRole(true)}
+                    disabled={!bulkRole || bulkBusy !== null || bulkRoleEligible.length === 0}
                   >
                     {bulkBusy === 'role' && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                     Apply role
@@ -430,8 +567,8 @@ export default function AdminUsers() {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={applyBulkReactivate}
-                    disabled={bulkBusy !== null || selectedList.every((u) => !u.deactivated)}
+                    onClick={() => setConfirmBulkReactivate(true)}
+                    disabled={bulkBusy !== null || bulkReactivateEligible.length === 0}
                   >
                     {bulkBusy === 'reactivate' ? (
                       <Loader2 className="h-4 w-4 mr-1 animate-spin" />
@@ -445,7 +582,7 @@ export default function AdminUsers() {
                     variant="outline"
                     className="text-destructive hover:text-destructive"
                     onClick={() => setConfirmBulkDeactivate(true)}
-                    disabled={bulkBusy !== null || selectedList.every((u) => u.deactivated)}
+                    disabled={bulkBusy !== null || bulkDeactivateEligible.length === 0}
                   >
                     {bulkBusy === 'deactivate' ? (
                       <Loader2 className="h-4 w-4 mr-1 animate-spin" />
@@ -461,7 +598,12 @@ export default function AdminUsers() {
               </div>
             )}
           </CardHeader>
-          <CardContent>
+          <CardContent className="relative">
+            {isFetching && pageData && (
+              <div className="absolute right-6 top-2 flex items-center gap-1 text-xs text-muted-foreground">
+                <Loader2 className="h-3 w-3 animate-spin" /> Updating…
+              </div>
+            )}
             <Table>
               <TableHeader>
                 <TableRow>
@@ -473,16 +615,16 @@ export default function AdminUsers() {
                       aria-label="Select all visible users"
                     />
                   </TableHead>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Role</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Last sign-in</TableHead>
+                  <SortHeader label="Name" sortKey="fullName" />
+                  <SortHeader label="Email" sortKey="email" />
+                  <SortHeader label="Role" sortKey="role" />
+                  <SortHeader label="Status" sortKey="deactivated" />
+                  <SortHeader label="Last sign-in" sortKey="lastSignInAt" />
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((u) => {
+                {visible.map((u) => {
                   const info = roleConfig[u.role];
                   const isSelf = u.id === currentUser?.id;
                   const pending = setActive.isPending && setActive.variables?.userId === u.id;
@@ -578,7 +720,7 @@ export default function AdminUsers() {
                     </TableRow>
                   );
                 })}
-                {filtered.length === 0 && (
+                {visible.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                       No users match the current filters
@@ -587,6 +729,48 @@ export default function AdminUsers() {
                 )}
               </TableBody>
             </Table>
+
+            <div className="mt-4 flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <span>Rows per page</span>
+                <Select
+                  value={String(pageSize)}
+                  onValueChange={(v) => setPageSize(Number(v))}
+                >
+                  <SelectTrigger className="w-20 h-8">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PAGE_SIZES.map((n) => (
+                      <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">
+                  Page {page} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page <= 1 || isFetching}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                  Prev
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page >= totalPages || isFetching}
+                >
+                  Next
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
           </CardContent>
         </Card>
       </main>
@@ -595,13 +779,25 @@ export default function AdminUsers() {
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>
-              Deactivate {selectedList.filter((u) => !u.deactivated).length} user
-              {selectedList.filter((u) => !u.deactivated).length === 1 ? '' : 's'}?
+              Deactivate {bulkDeactivateEligible.length} user
+              {bulkDeactivateEligible.length === 1 ? '' : 's'}?
             </AlertDialogTitle>
             <AlertDialogDescription>
               They will be signed out immediately and won't be able to sign back in until you reactivate them. Their tickets, comments, and history are preserved.
+              {selectedList.length !== bulkDeactivateEligible.length && (
+                <> {selectedList.length - bulkDeactivateEligible.length} already-deactivated account
+                  {selectedList.length - bulkDeactivateEligible.length === 1 ? '' : 's'} in your selection will be skipped.</>
+              )}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          <div className="max-h-40 overflow-y-auto text-sm rounded border p-2 space-y-1">
+            {bulkDeactivateEligible.slice(0, 20).map((u) => (
+              <div key={u.id} className="truncate">{labelFor(u)} <span className="text-muted-foreground">({u.email})</span></div>
+            ))}
+            {bulkDeactivateEligible.length > 20 && (
+              <div className="text-xs text-muted-foreground">…and {bulkDeactivateEligible.length - 20} more</div>
+            )}
+          </div>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction
@@ -610,11 +806,151 @@ export default function AdminUsers() {
                 applyBulkDeactivate();
               }}
             >
-              Deactivate
+              Deactivate {bulkDeactivateEligible.length}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <AlertDialog open={confirmBulkReactivate} onOpenChange={setConfirmBulkReactivate}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Reactivate {bulkReactivateEligible.length} user
+              {bulkReactivateEligible.length === 1 ? '' : 's'}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              They will be able to sign in again immediately.
+              {selectedList.length !== bulkReactivateEligible.length && (
+                <> {selectedList.length - bulkReactivateEligible.length} already-active account
+                  {selectedList.length - bulkReactivateEligible.length === 1 ? '' : 's'} in your selection will be skipped.</>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="max-h-40 overflow-y-auto text-sm rounded border p-2 space-y-1">
+            {bulkReactivateEligible.slice(0, 20).map((u) => (
+              <div key={u.id} className="truncate">{labelFor(u)} <span className="text-muted-foreground">({u.email})</span></div>
+            ))}
+            {bulkReactivateEligible.length > 20 && (
+              <div className="text-xs text-muted-foreground">…and {bulkReactivateEligible.length - 20} more</div>
+            )}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmBulkReactivate(false);
+                applyBulkReactivate();
+              }}
+            >
+              Reactivate {bulkReactivateEligible.length}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={confirmBulkRole} onOpenChange={setConfirmBulkRole}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Change role to {bulkRole ? roleConfig[bulkRole as AppRole].label : ''} for {bulkRoleEligible.length} user
+              {bulkRoleEligible.length === 1 ? '' : 's'}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              Role changes take effect immediately and will grant or revoke permissions.
+              {selectedList.length !== bulkRoleEligible.length && (
+                <> {selectedList.length - bulkRoleEligible.length} account
+                  {selectedList.length - bulkRoleEligible.length === 1 ? '' : 's'} already at this role will be skipped.</>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="max-h-40 overflow-y-auto text-sm rounded border p-2 space-y-1">
+            {bulkRoleEligible.slice(0, 20).map((u) => (
+              <div key={u.id} className="truncate">
+                {labelFor(u)} <span className="text-muted-foreground">({u.email})</span>{' '}
+                <span className="text-xs text-muted-foreground">— {roleConfig[u.role].label} → {bulkRole ? roleConfig[bulkRole as AppRole].label : ''}</span>
+              </div>
+            ))}
+            {bulkRoleEligible.length > 20 && (
+              <div className="text-xs text-muted-foreground">…and {bulkRoleEligible.length - 20} more</div>
+            )}
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmBulkRole(false);
+                applyBulkRole();
+              }}
+            >
+              Apply to {bulkRoleEligible.length}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Dialog open={!!bulkResult} onOpenChange={(open) => !open && setBulkResult(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              {bulkResult?.kind === 'role' && `Role change: ${bulkResult?.targetRole ? roleConfig[bulkResult.targetRole].label : ''}`}
+              {bulkResult?.kind === 'deactivate' && 'Deactivation results'}
+              {bulkResult?.kind === 'reactivate' && 'Reactivation results'}
+            </DialogTitle>
+            <DialogDescription>
+              {bulkResult?.successes.length ?? 0} succeeded ·{' '}
+              {bulkResult?.failures.length ?? 0} failed ·{' '}
+              {bulkResult?.skipped.length ?? 0} skipped
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 max-h-96 overflow-y-auto">
+            {bulkResult && bulkResult.successes.length > 0 && (
+              <div>
+                <div className="flex items-center gap-2 text-sm font-medium text-green-600 mb-1">
+                  <CheckCircle2 className="h-4 w-4" /> Succeeded ({bulkResult.successes.length})
+                </div>
+                <ul className="text-sm space-y-0.5 pl-6 list-disc">
+                  {bulkResult.successes.map((s) => (
+                    <li key={s.id} className="truncate">{s.label}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {bulkResult && bulkResult.failures.length > 0 && (
+              <div>
+                <div className="flex items-center gap-2 text-sm font-medium text-destructive mb-1">
+                  <XCircle className="h-4 w-4" /> Failed ({bulkResult.failures.length})
+                </div>
+                <ul className="text-sm space-y-1 pl-6 list-disc">
+                  {bulkResult.failures.map((f) => (
+                    <li key={f.id}>
+                      <span className="font-medium">{f.label}</span>
+                      <span className="text-muted-foreground"> — {f.message}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {bulkResult && bulkResult.skipped.length > 0 && (
+              <div>
+                <div className="text-sm font-medium text-muted-foreground mb-1">
+                  Skipped ({bulkResult.skipped.length})
+                </div>
+                <ul className="text-sm text-muted-foreground space-y-0.5 pl-6 list-disc">
+                  {bulkResult.skipped.map((s) => (
+                    <li key={s.id} className="truncate">
+                      {s.label} — {s.reason}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setBulkResult(null)}>Close</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={!!editUser} onOpenChange={(open) => !open && setEditUser(null)}>
         <DialogContent>
