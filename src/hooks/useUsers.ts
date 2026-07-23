@@ -43,6 +43,39 @@ export function useUsers() {
   });
 }
 
+export type UserSortKey =
+  | 'fullName'
+  | 'email'
+  | 'role'
+  | 'createdAt'
+  | 'lastSignInAt'
+  | 'deactivated';
+
+export interface UsersPageParams {
+  page: number;
+  pageSize: number;
+  sortBy: UserSortKey;
+  sortDir: 'asc' | 'desc';
+  search: string;
+  roleFilter: AppRole | 'all';
+  statusFilter: 'all' | 'active' | 'deactivated';
+}
+
+export interface UsersPageResult {
+  users: ManagedUser[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+export function useUsersPage(params: UsersPageParams) {
+  return useQuery({
+    queryKey: ['managed-users-page', params],
+    queryFn: () => invokeManageUsers<UsersPageResult>({ action: 'list', ...params }),
+    placeholderData: (prev) => prev,
+  });
+}
+
 interface CreateUserData {
   email: string;
   password: string;
@@ -73,7 +106,7 @@ export function useCreateUser() {
       return response.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['managed-users'] });
+      queryClient.invalidateQueries({ queryKey: ['managed-users'] }); queryClient.invalidateQueries({ queryKey: ['managed-users-page'] });
       toast.success('User created successfully');
     },
     onError: (error: Error) => {
@@ -90,7 +123,7 @@ export function useUpdateUserRole() {
       await invokeManageUsers({ action: 'update', userId, role });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['managed-users'] });
+      queryClient.invalidateQueries({ queryKey: ['managed-users'] }); queryClient.invalidateQueries({ queryKey: ['managed-users-page'] });
       toast.success('User role updated');
     },
     onError: (error: Error) => {
@@ -115,7 +148,7 @@ export function useUpdateUser() {
       await invokeManageUsers({ action: 'update', userId, role, fullName });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['managed-users'] });
+      queryClient.invalidateQueries({ queryKey: ['managed-users'] }); queryClient.invalidateQueries({ queryKey: ['managed-users-page'] });
       toast.success('User updated');
     },
     onError: (error: Error) => {
@@ -135,7 +168,7 @@ export function useSetUserActive() {
       });
     },
     onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['managed-users'] });
+      queryClient.invalidateQueries({ queryKey: ['managed-users'] }); queryClient.invalidateQueries({ queryKey: ['managed-users-page'] });
       toast.success(variables.active ? 'User reactivated' : 'User deactivated');
     },
     onError: (error: Error) => {

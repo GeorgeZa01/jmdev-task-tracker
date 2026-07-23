@@ -30,6 +30,14 @@ interface RequestBody {
   userId?: string;
   role?: Role;
   fullName?: string;
+  // Optional pagination / sorting / filtering for `list`
+  page?: number;
+  pageSize?: number;
+  sortBy?: "fullName" | "email" | "role" | "createdAt" | "lastSignInAt" | "deactivated";
+  sortDir?: "asc" | "desc";
+  search?: string;
+  roleFilter?: Role | "all";
+  statusFilter?: "all" | "active" | "deactivated";
 }
 
 function json(body: unknown, status: number, headers: Record<string, string>) {
@@ -72,10 +80,17 @@ serve(async (req) => {
     const admin = createClient(supabaseUrl, serviceKey);
 
     if (body.action === "list") {
-      const { data: usersPage, error: listErr } = await admin.auth.admin.listUsers({ perPage: 1000 });
-      if (listErr) return json({ error: listErr.message }, 500, corsHeaders);
+      // Fetch all auth users (paged from the admin API).
+      const authUsers: Awaited<ReturnType<typeof admin.auth.admin.listUsers>>["data"]["users"] = [];
+      const perPage = 1000;
+      for (let p = 1; p <= 20; p++) {
+        const { data, error } = await admin.auth.admin.listUsers({ page: p, perPage });
+        if (error) return json({ error: error.message }, 500, corsHeaders);
+        authUsers.push(...data.users);
+        if (data.users.length < perPage) break;
+      }
 
-      const ids = usersPage.users.map((u) => u.id);
+      const ids = authUsers.map((u) => u.id);
       const [{ data: roles }, { data: profiles }] = await Promise.all([
         admin.from("user_roles").select("user_id, role").in("user_id", ids),
         admin.from("profiles").select("user_id, full_name").in("user_id", ids),
@@ -84,7 +99,7 @@ serve(async (req) => {
       const roleMap = new Map((roles ?? []).map((r) => [r.user_id, r.role as Role]));
       const nameMap = new Map((profiles ?? []).map((p) => [p.user_id, p.full_name ?? ""]));
 
-      const users = usersPage.users.map((u) => ({
+      let mapped = authUsers.map((u) => ({
         id: u.id,
         email: u.email ?? "",
         fullName: nameMap.get(u.id) ?? (u.user_metadata?.full_name ?? ""),
@@ -94,7 +109,57 @@ serve(async (req) => {
         deactivated: Boolean(u.banned_until && new Date(u.banned_until) > new Date()),
       }));
 
-      return json({ users }, 200, corsHeaders);
+      // If the client didn't ask for pagination, keep the legacy shape.
+      const wantsPaged =
+        body.page !== undefined ||
+        body.pageSize !== undefined ||
+        body.sortBy !== undefined ||
+        body.search !== undefined ||
+        body.roleFilter !== undefined ||
+        body.statusFilter !== undefined;
+
+      if (!wantsPaged) {
+        return json({ users: mapped, total: mapped.length }, 200, corsHeaders);
+      }
+
+      const search = String(body.search ?? "").trim().toLowerCase();
+      const roleFilter = body.roleFilter ?? "all";
+      const statusFilter = body.statusFilter ?? "all";
+      if (roleFilter !== "all") mapped = mapped.filter((u) => u.role === roleFilter);
+      if (statusFilter === "active") mapped = mapped.filter((u) => !u.deactivated);
+      if (statusFilter === "deactivated") mapped = mapped.filter((u) => u.deactivated);
+      if (search) {
+        mapped = mapped.filter(
+          (u) =>
+            u.email.toLowerCase().includes(search) ||
+            (u.fullName ?? "").toLowerCase().includes(search),
+        );
+      }
+
+      const total = mapped.length;
+      const sortBy = body.sortBy ?? "createdAt";
+      const sortDir = body.sortDir === "asc" ? "asc" : "desc";
+      const dir = sortDir === "asc" ? 1 : -1;
+      mapped.sort((a, b) => {
+        const av = (a as Record<string, unknown>)[sortBy];
+        const bv = (b as Record<string, unknown>)[sortBy];
+        if (av == null && bv == null) return 0;
+        if (av == null) return 1;
+        if (bv == null) return -1;
+        if (typeof av === "boolean" && typeof bv === "boolean") {
+          return (Number(av) - Number(bv)) * dir;
+        }
+        if (av < bv) return -1 * dir;
+        if (av > bv) return 1 * dir;
+        return 0;
+      });
+
+      const page = Math.max(1, Math.floor(Number(body.page ?? 1)));
+      const pageSize = Math.min(200, Math.max(5, Math.floor(Number(body.pageSize ?? 25))));
+      const start = (page - 1) * pageSize;
+      const users = mapped.slice(start, start + pageSize);
+
+      return json({ users, total, page, pageSize }, 200, corsHeaders);
     }
 
     // Actions below require a target userId
