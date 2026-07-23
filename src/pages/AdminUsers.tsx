@@ -15,6 +15,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Card,
   CardContent,
@@ -102,6 +103,11 @@ export default function AdminUsers() {
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkRole, setBulkRole] = useState<AppRole | ''>('');
+  const [bulkBusy, setBulkBusy] = useState<null | 'role' | 'deactivate' | 'reactivate'>(null);
+  const [confirmBulkDeactivate, setConfirmBulkDeactivate] = useState(false);
+
   const filtered = useMemo(() => {
     if (!users) return [] as ManagedUser[];
     const q = search.trim().toLowerCase();
@@ -116,6 +122,77 @@ export default function AdminUsers() {
       );
     });
   }, [users, search, roleFilter, statusFilter]);
+
+  const selectableIds = useMemo(
+    () => filtered.filter((u) => u.id !== currentUser?.id).map((u) => u.id),
+    [filtered, currentUser?.id],
+  );
+  const selectedList = useMemo(
+    () => (users ?? []).filter((u) => selected.has(u.id)),
+    [users, selected],
+  );
+  const allVisibleSelected =
+    selectableIds.length > 0 && selectableIds.every((id) => selected.has(id));
+  const someVisibleSelected =
+    selectableIds.some((id) => selected.has(id)) && !allVisibleSelected;
+
+  const toggleOne = (id: string, checked: boolean) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+  const toggleAllVisible = (checked: boolean) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      for (const id of selectableIds) {
+        if (checked) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  };
+  const clearSelection = () => setSelected(new Set());
+
+  const runBulk = async (
+    kind: 'role' | 'deactivate' | 'reactivate',
+    fn: (u: ManagedUser) => Promise<unknown>,
+    filterFn: (u: ManagedUser) => boolean = () => true,
+  ) => {
+    const targets = selectedList.filter(filterFn);
+    if (targets.length === 0) return;
+    setBulkBusy(kind);
+    try {
+      await Promise.all(targets.map(fn));
+      clearSelection();
+      if (kind === 'role') setBulkRole('');
+    } finally {
+      setBulkBusy(null);
+    }
+  };
+
+  const applyBulkRole = () => {
+    if (!bulkRole) return;
+    return runBulk(
+      'role',
+      (u) => updateUser.mutateAsync({ userId: u.id, role: bulkRole as AppRole }),
+      (u) => u.role !== bulkRole,
+    );
+  };
+  const applyBulkDeactivate = () =>
+    runBulk(
+      'deactivate',
+      (u) => setActive.mutateAsync({ userId: u.id, active: false }),
+      (u) => !u.deactivated,
+    );
+  const applyBulkReactivate = () =>
+    runBulk(
+      'reactivate',
+      (u) => setActive.mutateAsync({ userId: u.id, active: true }),
+      (u) => u.deactivated,
+    );
 
   if (!roleLoading && role !== 'admin') {
     return <Navigate to="/" replace />;
@@ -290,7 +367,9 @@ export default function AdminUsers() {
             <div className="flex items-center justify-between gap-3 flex-wrap">
               <div>
                 <CardTitle>All users</CardTitle>
-                <CardDescription>{filtered.length} shown</CardDescription>
+                <CardDescription>
+                  {filtered.length} shown{selected.size > 0 ? ` · ${selected.size} selected` : ''}
+                </CardDescription>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
                 <div className="relative">
@@ -321,11 +400,79 @@ export default function AdminUsers() {
                 </Select>
               </div>
             </div>
+
+            {selected.size > 0 && (
+              <div className="mt-4 flex items-center gap-2 flex-wrap rounded-md border bg-muted/40 p-3">
+                <span className="text-sm font-medium">
+                  {selected.size} selected
+                </span>
+                <div className="flex items-center gap-2 ml-2">
+                  <Select value={bulkRole} onValueChange={(v) => setBulkRole(v as AppRole)}>
+                    <SelectTrigger className="w-40">
+                      <SelectValue placeholder="Change role to…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="user">User</SelectItem>
+                      <SelectItem value="agent">Support agent</SelectItem>
+                      <SelectItem value="admin">Admin</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    size="sm"
+                    onClick={applyBulkRole}
+                    disabled={!bulkRole || bulkBusy !== null}
+                  >
+                    {bulkBusy === 'role' && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    Apply role
+                  </Button>
+                </div>
+                <div className="flex items-center gap-2 ml-auto">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={applyBulkReactivate}
+                    disabled={bulkBusy !== null || selectedList.every((u) => !u.deactivated)}
+                  >
+                    {bulkBusy === 'reactivate' ? (
+                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                    ) : (
+                      <UserCheck className="h-4 w-4 mr-1" />
+                    )}
+                    Reactivate
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => setConfirmBulkDeactivate(true)}
+                    disabled={bulkBusy !== null || selectedList.every((u) => u.deactivated)}
+                  >
+                    {bulkBusy === 'deactivate' ? (
+                      <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                    ) : (
+                      <UserX className="h-4 w-4 mr-1" />
+                    )}
+                    Deactivate
+                  </Button>
+                  <Button size="sm" variant="ghost" onClick={clearSelection} disabled={bulkBusy !== null}>
+                    Clear
+                  </Button>
+                </div>
+              </div>
+            )}
           </CardHeader>
           <CardContent>
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-10">
+                    <Checkbox
+                      checked={allVisibleSelected ? true : someVisibleSelected ? 'indeterminate' : false}
+                      onCheckedChange={(v) => toggleAllVisible(v === true)}
+                      disabled={selectableIds.length === 0}
+                      aria-label="Select all visible users"
+                    />
+                  </TableHead>
                   <TableHead>Name</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Role</TableHead>
@@ -341,6 +488,14 @@ export default function AdminUsers() {
                   const pending = setActive.isPending && setActive.variables?.userId === u.id;
                   return (
                     <TableRow key={u.id} className={u.deactivated ? 'opacity-60' : ''}>
+                      <TableCell>
+                        <Checkbox
+                          checked={selected.has(u.id)}
+                          onCheckedChange={(v) => toggleOne(u.id, v === true)}
+                          disabled={isSelf}
+                          aria-label={`Select ${u.email}`}
+                        />
+                      </TableCell>
                       <TableCell className="font-medium">
                         {u.fullName || <span className="text-muted-foreground italic">No name</span>}
                         {isSelf && <Badge variant="outline" className="ml-2">You</Badge>}
@@ -425,7 +580,7 @@ export default function AdminUsers() {
                 })}
                 {filtered.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
                       No users match the current filters
                     </TableCell>
                   </TableRow>
@@ -435,6 +590,31 @@ export default function AdminUsers() {
           </CardContent>
         </Card>
       </main>
+
+      <AlertDialog open={confirmBulkDeactivate} onOpenChange={setConfirmBulkDeactivate}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              Deactivate {selectedList.filter((u) => !u.deactivated).length} user
+              {selectedList.filter((u) => !u.deactivated).length === 1 ? '' : 's'}?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              They will be signed out immediately and won't be able to sign back in until you reactivate them. Their tickets, comments, and history are preserved.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                setConfirmBulkDeactivate(false);
+                applyBulkDeactivate();
+              }}
+            >
+              Deactivate
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       <Dialog open={!!editUser} onOpenChange={(open) => !open && setEditUser(null)}>
         <DialogContent>
