@@ -1,0 +1,1 @@
+DROP POLICY IF EXISTS "Authenticated users upload attachments" ON storage.objects;
