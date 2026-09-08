@@ -23,7 +23,7 @@ function buildCorsHeaders(req: Request): Record<string, string> {
 }
 
 type Role = "admin" | "agent" | "user";
-type Action = "list" | "update" | "deactivate" | "reactivate";
+type Action = "list" | "update" | "deactivate" | "reactivate" | "delete";
 
 interface RequestBody {
   action: Action;
@@ -217,6 +217,14 @@ serve(async (req) => {
       const { error } = await admin.auth.admin.updateUserById(targetId, {
         ban_duration: "none",
       } as unknown as Record<string, unknown>);
+      if (error) return json({ error: error.message }, 500, corsHeaders);
+      return json({ success: true }, 200, corsHeaders);
+    }
+
+    if (body.action === "delete") {
+      // Detach the user's content so history survives, then remove the account.
+      await admin.from("tickets").update({ assignee_id: null }).eq("assignee_id", targetId);
+      const { error } = await admin.auth.admin.deleteUser(targetId);
       if (error) return json({ error: error.message }, 500, corsHeaders);
       return json({ success: true }, 200, corsHeaders);
     }
