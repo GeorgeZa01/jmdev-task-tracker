@@ -8,6 +8,7 @@ import {
   useCreateUser,
   useUpdateUser,
   useSetUserActive,
+  useDeleteUser,
   type ManagedUser,
   type AppRole,
   type UserSortKey,
@@ -76,6 +77,7 @@ import {
   ChevronRight,
   CheckCircle2,
   XCircle,
+  Trash2,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
@@ -104,6 +106,7 @@ export default function AdminUsers() {
   const createUser = useCreateUser();
   const updateUser = useUpdateUser();
   const setActive = useSetUserActive();
+  const deleteUser = useDeleteUser();
 
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState({
@@ -715,6 +718,37 @@ export default function AdminUsers() {
                               </AlertDialogContent>
                             </AlertDialog>
                           )}
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                disabled={isSelf || deleteUser.isPending}
+                                className="text-destructive hover:text-destructive"
+                                title={isSelf ? "You can't delete your own account" : 'Delete user'}
+                              >
+                                <Trash2 className="h-4 w-4 mr-1" />
+                                Delete
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Delete {u.fullName || u.email}?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This permanently removes the account and its profile. It cannot be undone. Tickets and comments they wrote stay in place. If you only want to block access, deactivate them instead.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                                  onClick={() => deleteUser.mutate({ userId: u.id })}
+                                >
+                                  Delete permanently
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
                         </div>
                       </TableCell>
                     </TableRow>
