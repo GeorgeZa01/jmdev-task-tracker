@@ -66,18 +66,22 @@ serve(async (req) => {
     const { data: { user: caller }, error: userError } = await userClient.auth.getUser();
     if (userError || !caller) return json({ error: "Unauthorized" }, 401, corsHeaders);
 
-    const { data: isAdmin } = await userClient.rpc("has_role", {
-      _user_id: caller.id,
-      _role: "admin",
-    });
-    if (!isAdmin) return json({ error: "Only admins can manage users" }, 403, corsHeaders);
+    const admin = createClient(supabaseUrl, serviceKey);
+
+    const { data: adminRow } = await admin
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", caller.id)
+      .eq("role", "admin")
+      .maybeSingle();
+    if (!adminRow) return json({ error: "Only admins can manage users" }, 403, corsHeaders);
 
     const body = (await req.json().catch(() => null)) as RequestBody | null;
     if (!body || typeof body !== "object" || !body.action) {
       return json({ error: "Invalid request" }, 400, corsHeaders);
     }
 
-    const admin = createClient(supabaseUrl, serviceKey);
+
 
     if (body.action === "list") {
       // Fetch all auth users (paged from the admin API).

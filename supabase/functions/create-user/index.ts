@@ -67,19 +67,23 @@ serve(async (req) => {
       );
     }
 
-    // Check if requesting user is an admin using the has_role function
-    const { data: isAdmin, error: roleError } = await userClient.rpc("has_role", {
-      _user_id: requestingUser.id,
-      _role: "admin",
-    });
+    // Check if requesting user is an admin (service client bypasses RLS)
+    const roleClient = createClient(supabaseUrl, supabaseServiceKey);
+    const { data: adminRow, error: roleError } = await roleClient
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", requestingUser.id)
+      .eq("role", "admin")
+      .maybeSingle();
 
-    if (roleError || !isAdmin) {
+    if (roleError || !adminRow) {
       console.error("User is not an admin:", roleError);
       return new Response(
         JSON.stringify({ error: "Only admins can create users" }),
         { status: 403, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
 
     // Parse and validate request body
     const body = await req.json().catch(() => null);
