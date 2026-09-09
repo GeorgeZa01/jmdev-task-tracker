@@ -1,4 +1,4 @@
-import { TicketStatus, TicketPriority, TicketLabel } from '@/types/ticket';
+import { TicketStatus, TicketPriority, TicketLabel, ServiceType } from '@/types/ticket';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import {
@@ -19,8 +19,15 @@ interface TicketFiltersProps {
   onPriorityChange: (priority: TicketPriority | 'all') => void;
   labelFilter: TicketLabel | 'all';
   onLabelChange: (label: TicketLabel | 'all') => void;
+  serviceTypeFilter?: string | 'all';
+  onServiceTypeChange?: (serviceTypeId: string | 'all') => void;
+  serviceTypes?: ServiceType[];
+  slaFilter?: SlaFilter;
+  onSlaChange?: (sla: SlaFilter) => void;
   onClearFilters: () => void;
 }
+
+export type SlaFilter = 'all' | 'on_track' | 'at_risk' | 'breached' | 'overdue';
 
 export function TicketFilters({
   searchQuery,
@@ -31,10 +38,20 @@ export function TicketFilters({
   onPriorityChange,
   labelFilter,
   onLabelChange,
+  serviceTypeFilter = 'all',
+  onServiceTypeChange,
+  serviceTypes = [],
+  slaFilter = 'all',
+  onSlaChange,
   onClearFilters,
 }: TicketFiltersProps) {
   const hasActiveFilters =
-    searchQuery || statusFilter !== 'all' || priorityFilter !== 'all' || labelFilter !== 'all';
+    searchQuery ||
+    statusFilter !== 'all' ||
+    priorityFilter !== 'all' ||
+    labelFilter !== 'all' ||
+    serviceTypeFilter !== 'all' ||
+    slaFilter !== 'all';
 
   return (
     <div className="space-y-4 p-4 border-b border-border bg-card">
@@ -87,6 +104,37 @@ export function TicketFilters({
               <SelectItem value="question">Question</SelectItem>
             </SelectContent>
           </Select>
+
+          {onServiceTypeChange && (
+            <Select value={serviceTypeFilter} onValueChange={onServiceTypeChange}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Service type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Services</SelectItem>
+                {serviceTypes.map((st) => (
+                  <SelectItem key={st.id} value={st.id}>
+                    {st.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+
+          {onSlaChange && (
+            <Select value={slaFilter} onValueChange={(v) => onSlaChange(v as SlaFilter)}>
+              <SelectTrigger className="w-[150px]">
+                <SelectValue placeholder="SLA status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All SLA</SelectItem>
+                <SelectItem value="on_track">On track</SelectItem>
+                <SelectItem value="at_risk">At risk</SelectItem>
+                <SelectItem value="breached">Breached</SelectItem>
+                <SelectItem value="overdue">Overdue</SelectItem>
+              </SelectContent>
+            </Select>
+          )}
           
           {hasActiveFilters && (
             <Button variant="outline" size="icon" onClick={onClearFilters}>

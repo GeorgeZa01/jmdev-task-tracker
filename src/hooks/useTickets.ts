@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
 import { supabase } from '@/integrations/supabase/client';
-import { Ticket, TicketStatus, TicketPriority, TicketLabel } from '@/types/ticket';
+import { Ticket, TicketStatus, TicketPriority, TicketLabel, ServiceType, SlaStatus } from '@/types/ticket';
 import { Tables, TablesInsert } from '@/integrations/supabase/types';
 import { z } from 'zod';
 
@@ -10,6 +10,7 @@ const ticketInputSchema = z.object({
   title: z.string().trim().min(1, 'Title is required').max(200, 'Title must be 200 characters or fewer'),
   description: z.string().trim().max(10000, 'Description must be 10,000 characters or fewer').optional().default(''),
   priority: z.enum(['low', 'medium', 'high', 'critical']),
+  serviceTypeId: z.string().uuid('Service type is required'),
 });
 
 const commentInputSchema = z.object({
@@ -19,18 +20,54 @@ const commentInputSchema = z.object({
 const ticketUpdateSchema = z.object({
   title: z.string().trim().min(1).max(200).optional(),
   description: z.string().trim().max(10000).optional(),
+  serviceTypeId: z.string().uuid().optional(),
 });
 
 type DbTicket = Tables<'tickets'>;
 type DbComment = Tables<'comments'>;
 type DbActivityLog = Tables<'activity_logs'>;
+type DbServiceType = Tables<'service_types'>;
+
+function computeSlaStatus(
+  status: TicketStatus,
+  responseDueAt?: Date,
+  resolutionDueAt?: Date,
+  firstRespondedAt?: Date
+): SlaStatus | undefined {
+  if (status === 'closed' || !responseDueAt || !resolutionDueAt) return undefined;
+
+  const now = new Date();
+
+  if (firstRespondedAt) {
+    // After first response, track resolution deadline.
+    if (now > resolutionDueAt) return 'breached';
+    const resolutionWarning = new Date(resolutionDueAt.getTime() - 60 * 60 * 1000); // 1 hour buffer
+    if (now > resolutionWarning) return 'at_risk';
+    return 'on_track';
+  }
+
+  // Before first response, track response deadline.
+  if (now > responseDueAt) return 'breached';
+  const responseWarning = new Date(responseDueAt.getTime() - 30 * 60 * 1000); // 30 min buffer
+  if (now > responseWarning) return 'at_risk';
+  return 'on_track';
+}
 
 // Transform database ticket to app Ticket type
 const transformTicket = (
   dbTicket: DbTicket,
+  serviceTypes: Map<string, DbServiceType>,
   comments: DbComment[] = [],
   activities: DbActivityLog[] = []
 ): Ticket => {
+  const serviceType = dbTicket.service_type_id
+    ? serviceTypes.get(dbTicket.service_type_id)
+    : undefined;
+
+  const responseDueAt = dbTicket.response_due_at ? new Date(dbTicket.response_due_at) : undefined;
+  const resolutionDueAt = dbTicket.resolution_due_at ? new Date(dbTicket.resolution_due_at) : undefined;
+  const firstRespondedAt = dbTicket.first_responded_at ? new Date(dbTicket.first_responded_at) : undefined;
+
   return {
     id: dbTicket.id,
     ticketNumber: dbTicket.ticket_number,
@@ -51,6 +88,20 @@ const transformTicket = (
     status: dbTicket.status as TicketStatus,
     priority: dbTicket.priority as TicketPriority,
     labels: (dbTicket.labels || []) as TicketLabel[],
+    serviceType: serviceType ? {
+      id: serviceType.id,
+      name: serviceType.name,
+      sortOrder: serviceType.sort_order,
+    } : undefined,
+    responseDueAt,
+    resolutionDueAt,
+    firstRespondedAt,
+    slaStatus: computeSlaStatus(
+      dbTicket.status as TicketStatus,
+      responseDueAt,
+      resolutionDueAt,
+      firstRespondedAt
+    ),
     comments: comments.map(c => ({
       id: c.id,
       ticketId: c.ticket_id,
@@ -112,13 +163,16 @@ export function useTickets() {
   return useQuery({
     queryKey: ['tickets'],
     queryFn: async () => {
-      const { data: tickets, error } = await supabase
-        .from('tickets')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const [{ data: tickets, error: ticketsError }, { data: serviceTypes, error: stError }] = await Promise.all([
+        supabase.from('tickets').select('*').order('created_at', { ascending: false }),
+        supabase.from('service_types').select('*').order('sort_order', { ascending: true }),
+      ]);
 
-      if (error) throw error;
-      return tickets.map(t => transformTicket(t));
+      if (ticketsError) throw ticketsError;
+      if (stError) throw stError;
+
+      const serviceTypeMap = new Map((serviceTypes || []).map((st) => [st.id, st]));
+      return (tickets || []).map(t => transformTicket(t, serviceTypeMap));
     },
   });
 }
@@ -166,16 +220,20 @@ export function useTicket(id: string) {
   return useQuery({
     queryKey: ['ticket', id],
     queryFn: async () => {
-      const [ticketResult, commentsResult, activitiesResult] = await Promise.all([
+      const [ticketResult, commentsResult, activitiesResult, serviceTypesResult] = await Promise.all([
         supabase.from('tickets').select('*').eq('id', id).single(),
         supabase.from('comments').select('*').eq('ticket_id', id).order('created_at'),
         supabase.from('activity_logs').select('*').eq('ticket_id', id).order('created_at'),
+        supabase.from('service_types').select('*'),
       ]);
 
       if (ticketResult.error) throw ticketResult.error;
-      
+      if (serviceTypesResult.error) throw serviceTypesResult.error;
+
+      const serviceTypeMap = new Map((serviceTypesResult.data || []).map((st) => [st.id, st]));
       return transformTicket(
         ticketResult.data,
+        serviceTypeMap,
         commentsResult.data || [],
         activitiesResult.data || []
       );
@@ -193,6 +251,7 @@ export function useCreateTicket() {
       description: string;
       priority: TicketPriority;
       labels: TicketLabel[];
+      serviceTypeId: string;
       authorName: string;
       authorEmail?: string;
       authorId?: string;
@@ -204,6 +263,7 @@ export function useCreateTicket() {
         title: data.title,
         description: data.description,
         priority: data.priority,
+        serviceTypeId: data.serviceTypeId,
       });
 
       const { data: ticket, error } = await supabase
@@ -213,6 +273,7 @@ export function useCreateTicket() {
           description: data.description?.trim() ?? '',
           priority: data.priority,
           labels: data.labels,
+          service_type_id: data.serviceTypeId,
           author_name: data.authorName,
           author_email: data.authorEmail,
           author_id: data.authorId,
@@ -253,10 +314,11 @@ export function useUpdateTicket() {
       actorName: string;
     }) => {
       // Validate mutable user-supplied fields
-      if (updates.title !== undefined || updates.description !== undefined) {
+      if (updates.title !== undefined || updates.description !== undefined || updates.service_type_id !== undefined) {
         ticketUpdateSchema.parse({
           title: updates.title ?? undefined,
           description: updates.description ?? undefined,
+          serviceTypeId: updates.service_type_id ?? undefined,
         });
       }
 
@@ -296,11 +358,13 @@ export function useAddComment() {
       content,
       authorName,
       authorId,
+      isStaff,
     }: {
       ticketId: string;
       content: string;
       authorName: string;
       authorId?: string;
+      isStaff?: boolean;
     }) => {
       commentInputSchema.parse({ content });
 
@@ -316,6 +380,15 @@ export function useAddComment() {
         .single();
 
       if (error) throw error;
+
+      // Mark first response time when staff replies for the first time.
+      if (isStaff) {
+        await supabase
+          .from('tickets')
+          .update({ first_responded_at: new Date().toISOString() })
+          .eq('id', ticketId)
+          .is('first_responded_at', null);
+      }
 
       // Log activity
       await supabase.from('activity_logs').insert({
@@ -338,7 +411,7 @@ export function useTicketStats() {
     queryFn: async () => {
       const { data: tickets, error } = await supabase
         .from('tickets')
-        .select('status, priority, assignee_id, assignee_name');
+        .select('status, priority, assignee_id, assignee_name, service_type_id, response_due_at, resolution_due_at, first_responded_at, created_at');
 
       if (error) throw error;
 

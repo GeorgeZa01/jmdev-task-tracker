@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { TicketPriority, TicketLabel } from '@/types/ticket';
+import { useServiceTypes } from '@/hooks/useServiceTypes';
 import {
   Dialog,
   DialogContent,
@@ -29,6 +30,7 @@ interface CreateTicketDialogProps {
     description: string;
     priority: TicketPriority;
     labels: TicketLabel[];
+    serviceTypeId: string;
     assigneeId?: string;
     assigneeName?: string;
   }) => Promise<void>;
@@ -52,10 +54,19 @@ export function CreateTicketDialog({
   isLoading,
 }: CreateTicketDialogProps) {
   const { toast } = useToast();
+  const { data: serviceTypes = [], isLoading: serviceTypesLoading } = useServiceTypes();
+
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<TicketPriority>('medium');
   const [selectedLabels, setSelectedLabels] = useState<TicketLabel[]>([]);
+  const [serviceTypeId, setServiceTypeId] = useState<string>('');
+
+  useEffect(() => {
+    if (open && serviceTypes.length > 0 && !serviceTypeId) {
+      setServiceTypeId(serviceTypes[0].id);
+    }
+  }, [open, serviceTypes, serviceTypeId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,12 +80,22 @@ export function CreateTicketDialog({
       return;
     }
 
+    if (!serviceTypeId) {
+      toast({
+        title: 'Error',
+        description: 'Please select a service type',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     try {
       await onCreateTicket({
         title: title.trim(),
         description: description.trim(),
         priority,
         labels: selectedLabels,
+        serviceTypeId,
       });
 
       resetForm();
@@ -98,6 +119,7 @@ export function CreateTicketDialog({
     setDescription('');
     setPriority('medium');
     setSelectedLabels([]);
+    setServiceTypeId(serviceTypes[0]?.id || '');
   };
 
   const toggleLabel = (label: TicketLabel) => {
@@ -135,19 +157,41 @@ export function CreateTicketDialog({
             />
           </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="priority">Priority</Label>
-            <Select value={priority} onValueChange={(v) => setPriority(v as TicketPriority)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Select priority" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="critical">Critical</SelectItem>
-                <SelectItem value="high">High</SelectItem>
-                <SelectItem value="medium">Medium</SelectItem>
-                <SelectItem value="low">Low</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="serviceType">Service Type</Label>
+              <Select
+                value={serviceTypeId}
+                onValueChange={setServiceTypeId}
+                disabled={serviceTypesLoading}
+              >
+                <SelectTrigger id="serviceType">
+                  <SelectValue placeholder="Select service type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {serviceTypes.map((st) => (
+                    <SelectItem key={st.id} value={st.id}>
+                      {st.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="priority">Priority</Label>
+              <Select value={priority} onValueChange={(v) => setPriority(v as TicketPriority)}>
+                <SelectTrigger id="priority">
+                  <SelectValue placeholder="Select priority" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="critical">Critical</SelectItem>
+                  <SelectItem value="high">High</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="low">Low</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -172,7 +216,7 @@ export function CreateTicketDialog({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={isLoading}>
+            <Button type="submit" disabled={isLoading || serviceTypesLoading || !serviceTypeId}>
               {isLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
               Create Ticket
             </Button>

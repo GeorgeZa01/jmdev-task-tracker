@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 
-export type AppRole = 'admin' | 'agent' | 'user';
+export type AppRole = 'admin' | 'agent' | 'user' | 'client';
 
 export function useUserRole() {
   const { user } = useAuth();
@@ -44,6 +44,16 @@ export function useIsAgent() {
   return role === 'agent' || role === 'admin';
 }
 
+export function useIsStaff() {
+  const { data: role } = useUserRole();
+  return role === 'admin' || role === 'agent';
+}
+
+export function useIsClient() {
+  const { data: role } = useUserRole();
+  return role === 'client';
+}
+
 export function useCanManageTicket(ticketAuthorId?: string) {
   const { user } = useAuth();
   const { data: role } = useUserRole();
@@ -51,7 +61,7 @@ export function useCanManageTicket(ticketAuthorId?: string) {
   // Admins and agents can manage all tickets
   if (role === 'admin' || role === 'agent') return true;
   
-  // Users can only manage their own tickets
+  // Users and clients can only manage their own tickets
   return user?.id === ticketAuthorId;
 }
 
@@ -68,7 +78,7 @@ export function useCanEditTicketContent(ticketAuthorId?: string) {
 }
 
 /**
- * Can change workflow fields: status (close/reopen), priority, labels, assignee.
+ * Can change workflow fields: status (close/reopen), priority, labels, assignee, service type.
  * Restricted to staff (admin, agent).
  */
 export function useCanManageTicketWorkflow() {
@@ -84,7 +94,7 @@ export function useCanDeleteTicket() {
 
 /**
  * Can post comments on this ticket.
- * Staff can comment anywhere; users can comment on tickets they authored.
+ * Staff can comment anywhere; users and clients can comment on tickets they authored.
  */
 export function useCanCommentOnTicket(ticketAuthorId?: string) {
   const { user } = useAuth();
@@ -97,4 +107,16 @@ export function useCanCommentOnTicket(ticketAuthorId?: string) {
 export function useCanManageUsers() {
   const { data: role } = useUserRole();
   return role === 'admin';
+}
+
+/** Only admins and agents can view the team directory. */
+export function useCanViewTeamDirectory() {
+  const { data: role } = useUserRole();
+  return role === 'admin' || role === 'agent' || role === 'user';
+}
+
+/** Only staff can access the dashboard. */
+export function useCanViewDashboard() {
+  const { data: role } = useUserRole();
+  return role === 'admin' || role === 'agent';
 }

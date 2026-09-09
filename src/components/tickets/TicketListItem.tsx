@@ -3,8 +3,9 @@ import { Ticket } from '@/types/ticket';
 import { StatusBadge } from './StatusBadge';
 import { PriorityBadge } from './PriorityBadge';
 import { LabelBadge } from './LabelBadge';
+import { SlaBadge, SlaDueDate } from './SlaBadge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { MessageSquare } from 'lucide-react';
+import { MessageSquare, Wrench } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 
 interface TicketListItemProps {
@@ -28,11 +29,18 @@ export function TicketListItem({ ticket }: TicketListItemProps) {
       <div className="p-4">
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
+            <div className="flex items-center gap-2 mb-1 flex-wrap">
               <StatusBadge status={ticket.status} />
               <span className="text-sm text-muted-foreground font-mono">
                 #{ticket.ticketNumber}
               </span>
+              {ticket.serviceType && (
+                <span className="inline-flex items-center gap-1 text-xs text-muted-foreground bg-muted px-2 py-0.5 rounded">
+                  <Wrench className="h-3 w-3" />
+                  {ticket.serviceType.name}
+                </span>
+              )}
+              <SlaBadge status={ticket.slaStatus} />
             </div>
             
             <h3 className="text-base font-semibold text-foreground mb-2 line-clamp-1">
@@ -46,7 +54,7 @@ export function TicketListItem({ ticket }: TicketListItemProps) {
               ))}
             </div>
             
-            <div className="flex items-center gap-4 text-sm text-muted-foreground">
+            <div className="flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
               <div className="flex items-center gap-1.5">
                 <Avatar className="h-5 w-5">
                   <AvatarImage src={ticket.author.avatar} alt={ticket.author.name} />
@@ -66,6 +74,10 @@ export function TicketListItem({ ticket }: TicketListItemProps) {
                   <MessageSquare className="h-4 w-4" />
                   <span>{ticket.comments.length}</span>
                 </div>
+              )}
+
+              {ticket.status === 'open' && (
+                <SlaDueDate dueAt={ticket.responseDueAt} label="Response due" />
               )}
             </div>
           </div>

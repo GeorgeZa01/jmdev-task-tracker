@@ -161,6 +161,65 @@ export type Database = {
         }
         Relationships: []
       }
+      service_types: {
+        Row: {
+          created_at: string
+          id: string
+          name: string
+          sort_order: number
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          name: string
+          sort_order?: number
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          name?: string
+          sort_order?: number
+        }
+        Relationships: []
+      }
+      sla_rules: {
+        Row: {
+          created_at: string
+          id: string
+          priority: string
+          resolution_hours: number
+          response_hours: number
+          service_type_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          priority: string
+          resolution_hours: number
+          response_hours: number
+          service_type_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          priority?: string
+          resolution_hours?: number
+          response_hours?: number
+          service_type_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sla_rules_service_type_id_fkey"
+            columns: ["service_type_id"]
+            isOneToOne: false
+            referencedRelation: "service_types"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       tickets: {
         Row: {
           assignee_id: string | null
@@ -170,9 +229,13 @@ export type Database = {
           author_name: string
           created_at: string
           description: string | null
+          first_responded_at: string | null
           id: string
           labels: string[] | null
           priority: string
+          resolution_due_at: string | null
+          response_due_at: string | null
+          service_type_id: string | null
           status: string
           status_changed_at: string
           ticket_number: number
@@ -187,9 +250,13 @@ export type Database = {
           author_name: string
           created_at?: string
           description?: string | null
+          first_responded_at?: string | null
           id?: string
           labels?: string[] | null
           priority?: string
+          resolution_due_at?: string | null
+          response_due_at?: string | null
+          service_type_id?: string | null
           status?: string
           status_changed_at?: string
           ticket_number?: number
@@ -204,16 +271,28 @@ export type Database = {
           author_name?: string
           created_at?: string
           description?: string | null
+          first_responded_at?: string | null
           id?: string
           labels?: string[] | null
           priority?: string
+          resolution_due_at?: string | null
+          response_due_at?: string | null
+          service_type_id?: string | null
           status?: string
           status_changed_at?: string
           ticket_number?: number
           title?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "tickets_service_type_id_fkey"
+            columns: ["service_type_id"]
+            isOneToOne: false
+            referencedRelation: "service_types"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_roles: {
         Row: {
@@ -279,7 +358,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      app_role: "admin" | "agent" | "user"
+      app_role: "admin" | "agent" | "user" | "client"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -407,7 +486,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "agent", "user"],
+      app_role: ["admin", "agent", "user", "client"],
     },
   },
 } as const
