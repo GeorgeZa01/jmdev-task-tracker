@@ -4,7 +4,13 @@ export type TicketPriority = 'critical' | 'high' | 'medium' | 'low';
 
 export type TicketLabel = 'bug' | 'feature' | 'enhancement' | 'documentation' | 'question';
 
-export type UserRole = 'admin' | 'agent' | 'user';
+export type UserRole = 'admin' | 'agent' | 'user' | 'client';
+
+export interface ServiceType {
+  id: string;
+  name: string;
+  sortOrder: number;
+}
 
 export interface User {
   id: string;
@@ -32,6 +38,8 @@ export interface ActivityLog {
   createdAt: Date;
 }
 
+export type SlaStatus = 'on_track' | 'at_risk' | 'breached';
+
 export interface Ticket {
   id: string;
   ticketNumber: number;
@@ -42,6 +50,11 @@ export interface Ticket {
   status: TicketStatus;
   priority: TicketPriority;
   labels: TicketLabel[];
+  serviceType?: ServiceType;
+  responseDueAt?: Date;
+  resolutionDueAt?: Date;
+  firstRespondedAt?: Date;
+  slaStatus?: SlaStatus;
   comments: Comment[];
   activityLog: ActivityLog[];
   createdAt: Date;
