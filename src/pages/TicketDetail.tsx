@@ -127,6 +127,8 @@ export default function TicketDetail() {
         content: newComment.trim(),
         authorName: currentUserName,
         authorId: user?.id,
+        isStaff: canManageWorkflow,
+
       });
       setNewComment('');
       toast({
