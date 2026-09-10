@@ -1,9 +1,10 @@
 import { useState, useMemo } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useTickets, useCreateTicket } from '@/hooks/useTickets';
+import { useServiceTypes } from '@/hooks/useServiceTypes';
 import { TicketStatus, TicketPriority, TicketLabel } from '@/types/ticket';
 import { Header } from '@/components/layout/Header';
-import { TicketFilters } from '@/components/tickets/TicketFilters';
+import { TicketFilters, SlaFilter } from '@/components/tickets/TicketFilters';
 import { TicketListItem } from '@/components/tickets/TicketListItem';
 import { CreateTicketDialog } from '@/components/tickets/CreateTicketDialog';
 import { Button } from '@/components/ui/button';
@@ -12,12 +13,15 @@ import { Plus, Ticket as TicketIcon, Loader2 } from 'lucide-react';
 export default function TicketList() {
   const { user } = useAuth();
   const { data: tickets = [], isLoading } = useTickets();
+  const { data: serviceTypes = [] } = useServiceTypes();
   const createTicket = useCreateTicket();
-  
+
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<TicketStatus | 'all'>('all');
   const [priorityFilter, setPriorityFilter] = useState<TicketPriority | 'all'>('all');
   const [labelFilter, setLabelFilter] = useState<TicketLabel | 'all'>('all');
+  const [serviceTypeFilter, setServiceTypeFilter] = useState<string | 'all'>('all');
+  const [slaFilter, setSlaFilter] = useState<SlaFilter>('all');
   const [isCreateDialogOpen, setIsCreateDialogOpen] = useState(false);
 
   const filteredTickets = useMemo(() => {
@@ -32,16 +36,41 @@ export default function TicketList() {
       const matchesStatus = statusFilter === 'all' || ticket.status === statusFilter;
       const matchesPriority = priorityFilter === 'all' || ticket.priority === priorityFilter;
       const matchesLabel = labelFilter === 'all' || ticket.labels.includes(labelFilter);
+      const matchesServiceType =
+        serviceTypeFilter === 'all' || ticket.serviceType?.id === serviceTypeFilter;
 
-      return matchesSearch && matchesStatus && matchesPriority && matchesLabel;
+      const matchesSla =
+        slaFilter === 'all' ||
+        (slaFilter === 'overdue'
+          ? ticket.slaStatus === 'breached'
+          : ticket.slaStatus === slaFilter);
+
+      return (
+        matchesSearch &&
+        matchesStatus &&
+        matchesPriority &&
+        matchesLabel &&
+        matchesServiceType &&
+        matchesSla
+      );
     });
-  }, [tickets, searchQuery, statusFilter, priorityFilter, labelFilter]);
+  }, [tickets, searchQuery, statusFilter, priorityFilter, labelFilter, serviceTypeFilter, slaFilter]);
+
+  const hasFilters =
+    !!searchQuery ||
+    statusFilter !== 'all' ||
+    priorityFilter !== 'all' ||
+    labelFilter !== 'all' ||
+    serviceTypeFilter !== 'all' ||
+    slaFilter !== 'all';
 
   const clearFilters = () => {
     setSearchQuery('');
     setStatusFilter('all');
     setPriorityFilter('all');
     setLabelFilter('all');
+    setServiceTypeFilter('all');
+    setSlaFilter('all');
   };
 
   const handleCreateTicket = async (data: {
@@ -49,11 +78,12 @@ export default function TicketList() {
     description: string;
     priority: TicketPriority;
     labels: TicketLabel[];
+    serviceTypeId: string;
     assigneeId?: string;
     assigneeName?: string;
   }) => {
     const userName = user?.user_metadata?.full_name || user?.email?.split('@')[0] || 'Unknown';
-    
+
     await createTicket.mutateAsync({
       ...data,
       authorName: userName,
@@ -89,7 +119,7 @@ export default function TicketList() {
               {openCount} open · {closedCount} closed
             </p>
           </div>
-          
+
           <Button onClick={() => setIsCreateDialogOpen(true)}>
             <Plus className="h-4 w-4 mr-2" />
             New Ticket
@@ -106,6 +136,11 @@ export default function TicketList() {
             onPriorityChange={setPriorityFilter}
             labelFilter={labelFilter}
             onLabelChange={setLabelFilter}
+            serviceTypeFilter={serviceTypeFilter}
+            onServiceTypeChange={setServiceTypeFilter}
+            serviceTypes={serviceTypes}
+            slaFilter={slaFilter}
+            onSlaChange={setSlaFilter}
             onClearFilters={clearFilters}
           />
 
@@ -122,9 +157,7 @@ export default function TicketList() {
               </div>
               <h3 className="text-lg font-semibold mb-2">No tickets found</h3>
               <p className="text-muted-foreground mb-4">
-                {searchQuery || statusFilter !== 'all' || priorityFilter !== 'all' || labelFilter !== 'all'
-                  ? 'Try adjusting your filters'
-                  : 'Create your first ticket to get started'}
+                {hasFilters ? 'Try adjusting your filters' : 'Create your first ticket to get started'}
               </p>
               <Button onClick={() => setIsCreateDialogOpen(true)}>
                 <Plus className="h-4 w-4 mr-2" />
