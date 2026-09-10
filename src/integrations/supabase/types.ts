@@ -355,13 +355,7 @@ export type Database = {
       }
     }
     Functions: {
-      list_assignable_staff: {
-        Args: never
-        Returns: {
-          full_name: string
-          user_id: string
-        }[]
-      }
+      [_ in never]: never
     }
     Enums: {
       app_role: "admin" | "agent" | "user" | "client"
