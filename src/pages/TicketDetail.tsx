@@ -9,13 +9,17 @@ import {
   useCanDeleteTicket,
 } from '@/hooks/useUserRole';
 import { useTicket, useUpdateTicket, useAddComment } from '@/hooks/useTickets';
+import { useAssignableStaff } from '@/hooks/useStaff';
+import { useServiceTypes } from '@/hooks/useServiceTypes';
 import { Header } from '@/components/layout/Header';
 import { StatusBadge } from '@/components/tickets/StatusBadge';
 import { PriorityBadge } from '@/components/tickets/PriorityBadge';
 import { LabelBadge } from '@/components/tickets/LabelBadge';
+import { SlaBadge, SlaDueDate } from '@/components/tickets/SlaBadge';
 import { CommentItem } from '@/components/tickets/CommentItem';
 import { ActivityTimeline } from '@/components/tickets/ActivityTimeline';
 import { FileAttachments } from '@/components/tickets/FileAttachments';
+
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
@@ -58,6 +62,9 @@ export default function TicketDetail() {
   const { data: ticket, isLoading } = useTicket(id || '');
   const updateTicket = useUpdateTicket();
   const addComment = useAddComment();
+  const { data: staff = [], isLoading: staffLoading } = useAssignableStaff();
+  const { data: serviceTypes = [] } = useServiceTypes();
+
   
   const canEditContent = useCanEditTicketContent(ticket?.author.id);
   const canManageWorkflow = useCanManageTicketWorkflow();
@@ -286,6 +293,49 @@ export default function TicketDetail() {
     }
   };
 
+  const handleAssigneeChange = async (value: string) => {
+    if (!canManageWorkflow) return;
+
+    const member = staff.find((s) => s.userId === value);
+    const updates =
+      value === 'unassigned'
+        ? { assignee_id: null, assignee_name: null }
+        : { assignee_id: value, assignee_name: member?.name ?? 'Team member' };
+
+    try {
+      await updateTicket.mutateAsync({ id: ticket.id, updates, actorName: currentUserName });
+      await supabase.from('activity_logs').insert({
+        ticket_id: ticket.id,
+        actor_name: currentUserName,
+        action: value === 'unassigned' ? 'unassigned' : `assigned to ${member?.name ?? 'team member'}`,
+      });
+      toast({
+        title: value === 'unassigned' ? 'Assignee removed' : 'Ticket assigned',
+        description:
+          value === 'unassigned'
+            ? 'This ticket is now unassigned.'
+            : `Assigned to ${member?.name ?? 'team member'}.`,
+      });
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to update assignee.', variant: 'destructive' });
+    }
+  };
+
+  const handleServiceTypeChange = async (serviceTypeId: string) => {
+    if (!canManageWorkflow) return;
+
+    try {
+      await updateTicket.mutateAsync({
+        id: ticket.id,
+        updates: { service_type_id: serviceTypeId },
+        actorName: currentUserName,
+      });
+      toast({ title: 'Service updated', description: 'Deadlines have been recalculated.' });
+    } catch (error) {
+      toast({ title: 'Error', description: 'Failed to update service type.', variant: 'destructive' });
+    }
+  };
+
   const startEditTitle = () => {
     if (!canEditContent) return;
     setEditTitle(ticket.title);
@@ -297,6 +347,7 @@ export default function TicketDetail() {
     setEditDescription(ticket.description);
     setIsEditingDescription(true);
   };
+
 
   return (
     <div className="min-h-screen bg-background">
@@ -608,7 +659,25 @@ export default function TicketDetail() {
             {/* Assignee */}
             <div className="border-2 border-border bg-card p-4">
               <h3 className="font-semibold mb-3">Assignee</h3>
-              {ticket.assignee ? (
+              {canManageWorkflow ? (
+                <Select
+                  value={ticket.assignee?.id ?? 'unassigned'}
+                  onValueChange={handleAssigneeChange}
+                  disabled={updateTicket.isPending || staffLoading}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Assign to..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="unassigned">Unassigned</SelectItem>
+                    {staff.map((member) => (
+                      <SelectItem key={member.userId} value={member.userId}>
+                        {member.name} ({member.role === 'admin' ? 'Admin' : 'Support agent'})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : ticket.assignee ? (
                 <div className="flex items-center gap-2">
                   <Avatar className="h-6 w-6">
                     <AvatarFallback className="text-[10px]">
@@ -621,6 +690,40 @@ export default function TicketDetail() {
                 <p className="text-sm text-muted-foreground">No one assigned</p>
               )}
             </div>
+
+            {/* Service type & SLA */}
+            <div className="border-2 border-border bg-card p-4">
+              <h3 className="font-semibold mb-3">Service & SLA</h3>
+              {canManageWorkflow ? (
+                <Select
+                  value={ticket.serviceType?.id ?? ''}
+                  onValueChange={handleServiceTypeChange}
+                  disabled={updateTicket.isPending}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select service" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {serviceTypes.map((st) => (
+                      <SelectItem key={st.id} value={st.id}>
+                        {st.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <p className="text-sm">{ticket.serviceType?.name || 'Not set'}</p>
+              )}
+
+              <div className="mt-3 space-y-2">
+                <SlaBadge status={ticket.slaStatus} />
+                <div className="flex flex-col gap-1">
+                  <SlaDueDate dueAt={ticket.responseDueAt} label="First reply due" />
+                  <SlaDueDate dueAt={ticket.resolutionDueAt} label="Resolution due" />
+                </div>
+              </div>
+            </div>
+
 
             {/* Timestamps */}
             <div className="border-2 border-border bg-card p-4">
